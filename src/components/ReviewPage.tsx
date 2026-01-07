@@ -5,8 +5,10 @@ import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
 import { Label } from './ui/label';
+import { Checkbox } from './ui/checkbox';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
 import { toast } from 'sonner';
-import { Check, X, MessageSquare, ExternalLink, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Check, X, MessageSquare, ExternalLink, AlertCircle, ShieldAlert, CheckSquare } from 'lucide-react';
 import { BulkItem } from './BulkGenerator';
 
 export interface ReviewSession {
@@ -28,6 +30,9 @@ export function ReviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [itemComments, setItemComments] = useState<Record<string, string>>({});
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkCommentDialog, setShowBulkCommentDialog] = useState(false);
+  const [bulkComment, setBulkComment] = useState('');
 
   useEffect(() => {
     // Add SEO blocking meta tags
@@ -125,6 +130,99 @@ export function ReviewPage() {
     localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
 
     setItemComments(prev => ({ ...prev, [itemId]: comment }));
+  };
+
+  const handleSelectRow = (itemId: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(itemId);
+      } else {
+        newSet.delete(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!session) return;
+    if (checked) {
+      setSelectedIds(new Set(session.items.map(item => item.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleBulkApprove = () => {
+    if (!session || selectedIds.size === 0) return;
+
+    const updatedItems = session.items.map(item =>
+      selectedIds.has(item.id) ? { ...item, reviewStatus: 'approved' as const } : item
+    );
+
+    const updatedSession = { ...session, items: updatedItems };
+    setSession(updatedSession);
+
+    // Update in localStorage
+    const sessions = JSON.parse(localStorage.getItem('reviewSessions') || '[]');
+    const updatedSessions = sessions.map((s: ReviewSession) =>
+      s.shareToken === token ? updatedSession : s
+    );
+    localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
+
+    toast.success(`${selectedIds.size} items approved`);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkReject = () => {
+    if (!session || selectedIds.size === 0) return;
+
+    const updatedItems = session.items.map(item =>
+      selectedIds.has(item.id) ? { ...item, reviewStatus: 'rejected' as const } : item
+    );
+
+    const updatedSession = { ...session, items: updatedItems };
+    setSession(updatedSession);
+
+    // Update in localStorage
+    const sessions = JSON.parse(localStorage.getItem('reviewSessions') || '[]');
+    const updatedSessions = sessions.map((s: ReviewSession) =>
+      s.shareToken === token ? updatedSession : s
+    );
+    localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
+
+    toast.success(`${selectedIds.size} items rejected`);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkCommentSubmit = () => {
+    if (!session || selectedIds.size === 0 || !bulkComment.trim()) return;
+
+    const updatedItems = session.items.map(item =>
+      selectedIds.has(item.id) ? { ...item, reviewComment: bulkComment } : item
+    );
+
+    const updatedSession = { ...session, items: updatedItems };
+    setSession(updatedSession);
+
+    // Update in localStorage
+    const sessions = JSON.parse(localStorage.getItem('reviewSessions') || '[]');
+    const updatedSessions = sessions.map((s: ReviewSession) =>
+      s.shareToken === token ? updatedSession : s
+    );
+    localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
+
+    // Update itemComments state
+    const newComments = { ...itemComments };
+    selectedIds.forEach(id => {
+      newComments[id] = bulkComment;
+    });
+    setItemComments(newComments);
+
+    toast.success(`Comment added to ${selectedIds.size} items`);
+    setShowBulkCommentDialog(false);
+    setBulkComment('');
+    setSelectedIds(new Set());
   };
 
   const handleSubmitReview = () => {
@@ -244,154 +342,246 @@ export function ReviewPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                <span className="text-slate-600">Approved: {approvedCount}</span>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <span className="text-slate-600">Approved: {approvedCount}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                  <span className="text-slate-600">Rejected: {rejectedCount}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-slate-300 rounded-full"></div>
+                  <span className="text-slate-600">Pending: {pendingCount}</span>
+                </div>
               </div>
+
+              {/* Bulk Selection Controls */}
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                <span className="text-slate-600">Rejected: {rejectedCount}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-slate-300 rounded-full"></div>
-                <span className="text-slate-600">Pending: {pendingCount}</span>
+                <Checkbox
+                  checked={session.items.length > 0 && selectedIds.size === session.items.length}
+                  onCheckedChange={handleSelectAll}
+                />
+                <span className="text-sm text-slate-600">Select All</span>
               </div>
             </div>
+
+            {/* Bulk Actions Bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-lg">
+                <Badge variant="secondary" className="bg-slate-200 text-slate-700">
+                  {selectedIds.size} selected
+                </Badge>
+                <div className="flex gap-2 ml-auto">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-green-200 hover:bg-green-50"
+                    onClick={handleBulkApprove}
+                  >
+                    <Check className="h-4 w-4 mr-1.5" />
+                    Approve All
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-red-200 hover:bg-red-50"
+                    onClick={handleBulkReject}
+                  >
+                    <X className="h-4 w-4 mr-1.5" />
+                    Reject All
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowBulkCommentDialog(true)}
+                  >
+                    <MessageSquare className="h-4 w-4 mr-1.5" />
+                    Add Comment
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Review Items */}
-        <div className="space-y-6">
-          {session.items.map((item, index) => (
-            <Card key={item.id} className={`overflow-hidden ${
-              item.reviewStatus === 'approved' ? 'border-green-200 bg-green-50/50' :
-              item.reviewStatus === 'rejected' ? 'border-red-200 bg-red-50/50' :
-              'border-slate-200'
-            }`}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg">
-                      {index + 1}. {item.word || 'Untitled'}
-                    </CardTitle>
-                    {item.description && (
-                      <p className="text-sm text-slate-600 mt-1">{item.description}</p>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant={item.reviewStatus === 'approved' ? 'default' : 'outline'}
-                      className={item.reviewStatus === 'approved' ? 'bg-green-600 hover:bg-green-700' : ''}
-                      onClick={() => handleUpdateReviewStatus(item.id, 'approved')}
-                    >
-                      <Check className="h-4 w-4 mr-1" />
-                      Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={item.reviewStatus === 'rejected' ? 'default' : 'outline'}
-                      className={item.reviewStatus === 'rejected' ? 'bg-red-600 hover:bg-red-700' : ''}
-                      onClick={() => handleUpdateReviewStatus(item.id, 'rejected')}
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Reject
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Image/Video Preview */}
-                {item.imageUrl && (
-                  <div className="space-y-2">
-                    <div className="relative bg-slate-100 rounded-md overflow-hidden">
-                      {item.mediaType === 'video' ? (
-                        <video
-                          src={item.imageUrl}
-                          controls
-                          className="w-full max-h-96 object-contain"
-                        />
-                      ) : (
-                        <img
-                          src={item.imageUrl}
-                          alt={item.word}
-                          className="w-full max-h-96 object-contain"
-                          style={isPaidStock(item.imageSource?.[0] || '') ? { maxWidth: '150px' } : {}}
-                        />
-                      )}
+        {/* Review Items - List Style with All Columns */}
+        <Card className="overflow-hidden">
+          <CardContent className="p-0">
+            <div className="divide-y divide-slate-200">
+              {session.items.map((item, index) => (
+                <div key={item.id} className={`p-6 transition-colors ${
+                  selectedIds.has(item.id) ? 'bg-slate-100/50 border-l-4 border-l-slate-500' :
+                  item.reviewStatus === 'approved' ? 'bg-green-50/30' :
+                  item.reviewStatus === 'rejected' ? 'bg-red-50/30' :
+                  'hover:bg-slate-50/50'
+                }`}>
+                  {/* Main Content Row */}
+                  <div className="grid grid-cols-12 gap-4 mb-4">
+                    {/* Checkbox + # Column */}
+                    <div className="col-span-1 flex items-start gap-3 pt-1">
+                      <Checkbox
+                        checked={selectedIds.has(item.id)}
+                        onCheckedChange={(checked) => handleSelectRow(item.id, checked as boolean)}
+                      />
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                        item.reviewStatus === 'approved' ? 'bg-green-100 text-green-700' :
+                        item.reviewStatus === 'rejected' ? 'bg-red-100 text-red-700' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {index + 1}
+                      </div>
+                    </div>
 
-                      {/* Stock Type Badge */}
-                      <div className="absolute top-2 left-2">
-                        {isFreeStock(item.imageSource?.[0] || '') && (
-                          <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">
-                            FREE - Preview & export allowed
-                          </Badge>
+                    {/* Visual & Source Column */}
+                    <div className="col-span-3">
+                      {item.imageUrl ? (
+                        <div className="flex flex-col gap-2">
+                          <div className="relative aspect-[3/2] bg-slate-100 rounded-md overflow-hidden">
+                            {item.mediaType === 'video' ? (
+                              <video
+                                src={item.imageUrl}
+                                className="w-full h-full object-cover"
+                                controls
+                                loop
+                                muted
+                              />
+                            ) : (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.word}
+                                className="w-full h-full object-cover"
+                              />
+                            )}
+
+                            {/* Stock Type Badge - Top Left */}
+                            {item.imageSource?.[0] && (
+                              <div className="absolute top-1 left-1">
+                                {isFreeStock(item.imageSource[0]) ? (
+                                  <Badge variant="secondary" className="bg-slate-600 text-white border-0 text-[8px] px-1.5 h-4">
+                                    FREE
+                                  </Badge>
+                                ) : isPaidStock(item.imageSource[0]) ? (
+                                  <Badge variant="secondary" className="bg-slate-700 text-white border-0 text-[8px] px-1.5 h-4">
+                                    PAID
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            )}
+
+                            {/* Source Name Badge - Bottom Right */}
+                            <div className="absolute bottom-1 right-1">
+                              <Badge variant="secondary" className="bg-black/60 text-white border-0 text-[9px] px-1.5 h-4">
+                                {item.imageSource?.[0] || 'AI Generated'}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {/* Attribution */}
+                          {item.imageSourceUrl && (
+                            <a
+                              href={item.imageSourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              View Original
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="aspect-[3/2] bg-slate-100 rounded-md flex items-center justify-center text-xs text-slate-400">
+                          No visual
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Word Column */}
+                    <div className="col-span-2 flex items-start pt-1">
+                      <div className="text-sm font-semibold text-slate-900">
+                        {item.word || 'Untitled'}
+                      </div>
+                    </div>
+
+                    {/* Description Column */}
+                    <div className="col-span-4 flex items-start pt-1">
+                      <div className="space-y-2 w-full">
+                        {item.description && (
+                          <p className="text-sm text-slate-600">{item.description}</p>
                         )}
-                        {isPaidStock(item.imageSource?.[0] || '') && (
-                          <Badge variant="secondary" className="bg-slate-100 text-slate-700 text-xs">
-                            PAID - Preview only · export links only
-                          </Badge>
+
+                        {/* Keywords */}
+                        {item.keywords && (
+                          <div className="flex flex-wrap gap-1">
+                            {item.keywords.split(' ').map((keyword, i) => (
+                              <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600">
+                                {keyword}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Attribution */}
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <span>Source: {item.imageSource?.[0] || 'Unknown'}</span>
-                      {item.photographer && (
-                        <>
-                          <span>•</span>
-                          <span>By: {item.photographer}</span>
-                        </>
-                      )}
-                      {item.imageSourceUrl && (
-                        <a
-                          href={item.imageSourceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-slate-500 hover:text-slate-700"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          View Original
-                        </a>
+                    {/* Note Column */}
+                    <div className="col-span-2 flex items-start pt-1">
+                      {item.note && (
+                        <p className="text-sm text-slate-600">{item.note}</p>
                       )}
                     </div>
-
-                    {isFreeStock(item.imageSource?.[0] || '') && (
-                      <p className="text-xs text-slate-500 italic">
-                        Free stock – Check license before use
-                      </p>
-                    )}
                   </div>
-                )}
 
-                {/* Keywords */}
-                {item.keywords && (
-                  <div className="text-sm">
-                    <Label className="text-xs text-slate-600">Keywords</Label>
-                    <p className="text-slate-700 mt-1">{item.keywords}</p>
+                  {/* Review Actions - Bottom Section */}
+                  <div className="space-y-3 pt-4 border-t border-slate-200">
+                    {/* Comment */}
+                    <div>
+                      <Label htmlFor={`comment-${item.id}`} className="text-xs text-slate-600 mb-1.5 block">
+                        Review Comment
+                      </Label>
+                      <Textarea
+                        id={`comment-${item.id}`}
+                        placeholder="Add your feedback or suggestions..."
+                        value={itemComments[item.id] || item.reviewComment || ''}
+                        onChange={(e) => handleUpdateComment(item.id, e.target.value)}
+                        className="min-h-[70px] text-sm"
+                      />
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant={item.reviewStatus === 'approved' ? 'default' : 'outline'}
+                        className={item.reviewStatus === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'border-green-200 hover:bg-green-50 hover:border-green-300'}
+                        onClick={() => handleUpdateReviewStatus(item.id, 'approved')}
+                      >
+                        <Check className="h-4 w-4 mr-1.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={item.reviewStatus === 'rejected' ? 'default' : 'outline'}
+                        className={item.reviewStatus === 'rejected' ? 'bg-red-600 hover:bg-red-700' : 'border-red-200 hover:bg-red-50 hover:border-red-300'}
+                        onClick={() => handleUpdateReviewStatus(item.id, 'rejected')}
+                      >
+                        <X className="h-4 w-4 mr-1.5" />
+                        Reject
+                      </Button>
+                      {item.reviewStatus && (
+                        <span className="text-xs text-slate-500 ml-2">
+                          {item.reviewStatus === 'approved' ? '✓ Approved' : '✗ Rejected'}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
-
-                {/* Comment Section */}
-                <div className="space-y-2">
-                  <Label htmlFor={`comment-${item.id}`} className="flex items-center gap-2 text-sm">
-                    <MessageSquare className="h-4 w-4" />
-                    Comments (optional)
-                  </Label>
-                  <Textarea
-                    id={`comment-${item.id}`}
-                    placeholder="Add your feedback or suggestions..."
-                    value={itemComments[item.id] || item.reviewComment || ''}
-                    onChange={(e) => handleUpdateComment(item.id, e.target.value)}
-                    className="min-h-[80px]"
-                  />
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Submit Button */}
         {session.status !== 'completed' && (
@@ -441,6 +631,37 @@ export function ReviewPage() {
           </Card>
         )}
       </div>
+
+      {/* Bulk Comment Dialog */}
+      <Dialog open={showBulkCommentDialog} onOpenChange={setShowBulkCommentDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Comment to Selected Items</DialogTitle>
+            <DialogDescription>
+              Add a comment to {selectedIds.size} selected item{selectedIds.size > 1 ? 's' : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              placeholder="Enter your comment..."
+              value={bulkComment}
+              onChange={(e) => setBulkComment(e.target.value)}
+              className="min-h-[120px]"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowBulkCommentDialog(false);
+              setBulkComment('');
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkCommentSubmit} disabled={!bulkComment.trim()}>
+              Add Comment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
