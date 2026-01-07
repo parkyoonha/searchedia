@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   FileSpreadsheet,
   Trash2,
   Rows,
@@ -65,13 +65,14 @@ export default function App() {
   // Project State
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  
+
   // Subscription State
-  const [user, setUser] = useState<{id: string, name: string, email: string, plan: 'free' | 'pro'} | null>(null);
+  const [user, setUser] = useState<{id: string, name: string, email: string, plan: 'free' | 'pro', avatar_url?: string} | null>(null);
   const [credits, setCredits] = useState(50); // Free credits
   const [showPricing, setShowPricing] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
+
 
   // Clear localStorage on initial load if not logged in (will load from DB if logged in)
   useEffect(() => {
@@ -114,7 +115,8 @@ export default function App() {
           id: session.user.id,
           name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
           email: session.user.email || '',
-          plan: 'pro' // Default to pro for logged in users
+          plan: 'pro', // Default to pro for logged in users
+          avatar_url: session.user.user_metadata?.picture
         });
 
         // Load projects from DB when logged in
@@ -142,28 +144,38 @@ export default function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
-        setUser({
+        // User logged in
+        const loggedInUser = {
           id: session.user.id,
           name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
           email: session.user.email || '',
-          plan: 'pro'
-        });
+          plan: 'pro' as 'pro',
+          avatar_url: session.user.user_metadata?.picture
+        };
+        setUser(loggedInUser);
         setShowLogin(false);
 
-        // Load projects from DB
+        // Load projects from cloud
         const dbProjects = await loadProjectsFromDB();
+        setProjects(dbProjects);
+        setActiveProjectId(dbProjects[0]?.id || null);
+
         if (dbProjects.length > 0) {
-          setProjects(dbProjects);
-          setActiveProjectId(dbProjects[0].id);
+          toast.success(`Loaded ${dbProjects.length} projects from your account.`);
         }
+
       } else {
+        // User logged out
         setUser(null);
-        // On logout, keep localStorage projects
+        // On logout, we could decide to keep local projects or clear them.
+        // For now, we clear them to ensure a clean state for the next user.
+        setProjects([]);
+        setActiveProjectId(null);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, []); // Empty dependency array - only run once on mount
 
   const activeProject = projects.find(p => p.id === activeProjectId);
   const activeItems = activeProject ? activeProject.items : [];
@@ -183,12 +195,6 @@ export default function App() {
 
   const handleConsumeCredits = (amount: number) => {
       setCredits(prev => Math.max(0, prev - amount));
-  };
-
-  const handleLogin = (email: string) => {
-      setUser({ id: 'demo-id', name: "Demo User", email, plan: 'pro' });
-      setShowLogin(false);
-      toast.success("Logged in successfully");
   };
 
   const handlePaymentSuccess = () => {
@@ -214,10 +220,46 @@ export default function App() {
     toast.success(`Deleted ${itemsToDelete.length} items from active project`);
   };
 
-  const handleBulkGenerate = (newItems: Array<{word: string, description: string, imageUrl?: string, imageSource?: string, imageSourceUrl?: string, mediaType?: 'image' | 'video', generatedImages?: Array<{ url: string; source: string; sourceUrl: string }>, selectedImageIndex?: number}>, settings: { sources: string[], count: string, mediaType: 'image' | 'video', baseKeywords?: string }) => {
+  const handleBulkGenerate = (newItems: Array<{word: string, description: string, keywords?: string, imageUrl?: string, imageSource?: string, imageSourceUrl?: string, photographer?: string, photographerUrl?: string, mediaType?: 'image' | 'video', generatedImages?: Array<{ url: string; source: string; sourceUrl: string }>, selectedImageIndex?: number, isolated?: boolean}>, settings: { sources: string[], count: string, mediaType: 'image' | 'video', baseKeywords?: string }) => {
     setViewMode('bulk');
 
-    // Always create a new project when generating from landing
+    // If logged in and projects exist, add items to existing project instead of creating new one
+    if (user && projects.length > 0) {
+      const targetProject = activeProject || projects[0];
+      const existingItemCount = targetProject.items.length;
+
+      const generatedItems: BulkItem[] = newItems.map((item, idx) => ({
+        id: getRandomId(),
+        number: existingItemCount + idx + 1,
+        word: item.word,
+        description: item.description,
+        note: '',
+        status: item.imageUrl ? 'completed' : 'pending',
+        history: item.imageUrl ? [{ url: item.imageUrl, mediaType: item.mediaType || settings.mediaType }] : [],
+        createdAt: Date.now(),
+        imageUrl: item.imageUrl || '',
+        imageSource: item.imageSource || 'AI Generated',
+        imageSourceUrl: item.imageSourceUrl || '',
+        artistName: item.photographer || '',
+        artistUrl: item.photographerUrl || '',
+        keywords: item.keywords || settings.baseKeywords || '',
+        mediaType: item.mediaType || settings.mediaType,
+        generatedImages: item.generatedImages,
+        selectedImageIndex: item.selectedImageIndex,
+        isolated: item.isolated
+      }));
+
+      setProjects(prev => prev.map(p =>
+        p.id === targetProject.id
+          ? { ...p, items: [...p.items, ...generatedItems] }
+          : p
+      ));
+      setActiveProjectId(targetProject.id);
+      toast.success(`Added ${generatedItems.length} items to "${targetProject.name}"`);
+      return;
+    }
+
+    // Create a new project when not logged in or no projects exist
     const projectNumber = projects.length + 1;
     const projectName = `Project ${projectNumber}`;
 
@@ -239,10 +281,13 @@ export default function App() {
         imageUrl: item.imageUrl || '',
         imageSource: item.imageSource || 'AI Generated',
         imageSourceUrl: item.imageSourceUrl || '',
-        keywords: settings.baseKeywords || '',
+        artistName: item.photographer || '',
+        artistUrl: item.photographerUrl || '',
+        keywords: item.keywords || settings.baseKeywords || '',
         mediaType: item.mediaType || settings.mediaType,
         generatedImages: item.generatedImages,
-        selectedImageIndex: item.selectedImageIndex
+        selectedImageIndex: item.selectedImageIndex,
+        isolated: item.isolated
     }));
 
     newProject.items = generatedItems;
@@ -350,12 +395,38 @@ export default function App() {
                      {!user ? (
                        <Button variant="ghost" size="sm" onClick={() => setShowLogin(true)}>Login</Button>
                      ) : (
-                       <div className="flex items-center gap-2">
-                         <span className="text-sm text-slate-600">{user.name}</span>
-                         <Badge variant="secondary" className="text-xs">
-                           {user.plan === 'pro' ? 'Pro' : 'Free'}
-                         </Badge>
-                       </div>
+                       <DropdownMenu>
+                         <DropdownMenuTrigger asChild>
+                           <button className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-pointer">
+                             <Avatar className="h-9 w-9">
+                               <AvatarImage src={user.avatar_url} alt={user.name} />
+                               <AvatarFallback className="bg-indigo-100 text-indigo-700 text-sm font-medium">
+                                 {user.name?.[0]?.toUpperCase()}
+                               </AvatarFallback>
+                             </Avatar>
+                             <div className="flex-1 text-left min-w-0 hidden md:block">
+                               <div className="text-xs font-medium text-slate-900 truncate">{user.name}</div>
+                               <div className="text-[10px] text-slate-500 truncate">{user.email}</div>
+                             </div>
+                           </button>
+                         </DropdownMenuTrigger>
+                         <DropdownMenuContent className="w-56" align="end">
+                           <DropdownMenuLabel className="font-normal">
+                             <div className="flex flex-col space-y-1">
+                               <p className="text-sm font-medium leading-none">{user.name}</p>
+                               <p className="text-xs leading-none text-slate-500">{user.email}</p>
+                             </div>
+                           </DropdownMenuLabel>
+                           <DropdownMenuSeparator />
+                           <DropdownMenuItem
+                             className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
+                             onClick={() => setCurrentDialog('logout')}
+                           >
+                             <LogOut className="mr-2 h-4 w-4" />
+                             Log out
+                           </DropdownMenuItem>
+                         </DropdownMenuContent>
+                       </DropdownMenu>
                      )}
                    </div>
                  </div>
@@ -372,7 +443,6 @@ export default function App() {
                  credits={credits}
                  onUpgrade={() => setShowPricing(true)}
                  onConsumeCredits={handleConsumeCredits}
-                 // initialBaseKeywords={baseKeywords} // No longer needed
                  projects={projects}
                  activeProjectId={activeProjectId}
                  addProject={addProject}
@@ -382,6 +452,7 @@ export default function App() {
                  switchActiveProject={switchActiveProject}
                  user={user}
                  onShowLogin={() => setShowLogin(true)}
+                 onLogout={() => setCurrentDialog('logout')}
                />
              )}
            </>
@@ -418,69 +489,52 @@ export default function App() {
             </div>
           )}
 
-          {/* Billing dialog hidden */}
-          {/* {currentDialog === 'billing' && (
-            <div className="py-4 space-y-4">
-              <div className="rounded-lg border p-4">
-                 <div className="flex justify-between items-center mb-2">
-                    <span className="font-medium">Pro Plan</span>
-                    <Badge>Active</Badge>
-                 </div>
-                 <p className="text-sm text-slate-500 mb-4">$29/month, billed monthly</p>
-                 <Button variant="outline" size="sm" className="w-full">Manage Subscription</Button>
-              </div>
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium">Recent Invoices</h4>
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex justify-between items-center text-sm p-2 bg-slate-50 rounded">
-                    <span>Dec {i}, 2024</span>
-                    <span className="font-mono">$29.00</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )} */}
-
-          {/* Team dialog hidden */}
-          {/* {currentDialog === 'team' && (
-            <div className="py-4 space-y-4">
-              <div className="flex justify-between items-center">
-                <h4 className="text-sm font-medium">Team Members (3/5)</h4>
-                <Button size="sm">Invite</Button>
-              </div>
-              <div className="space-y-3">
-                {['John Doe (You)', 'Sarah Smith', 'Mike Johnson'].map((member, i) => (
-                  <div key={i} className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xs font-bold">
-                        {member.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <span className="text-sm">{member}</span>
-                    </div>
-                    <span className="text-xs text-slate-500">{i === 0 ? 'Owner' : 'Member'}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )} */}
-
           <DialogFooter>
             {currentDialog === 'logout' ? (
               <>
                 <Button variant="outline" onClick={() => setCurrentDialog(null)}>Cancel</Button>
-                <Button variant="destructive" onClick={() => {
-                  // Clear auth data from localStorage
-                  localStorage.removeItem('sb-uvrzqnatomfqapysejdf-auth-token');
-                  localStorage.removeItem('geminiProjects');
-                  localStorage.removeItem('geminiActiveProjectId');
+                <Button variant="destructive" onClick={async () => {
+                  try {
+                    console.log('Starting logout process...');
 
-                  // Clear projects and reset state
-                  setProjects([]);
-                  setActiveProjectId(null);
-                  setUser(null);
-                  setCurrentDialog(null);
-                  setViewMode('landing');
-                  toast.success("Logged out successfully");
+                    // Sign out from Supabase with timeout
+                    const signOutPromise = supabase.auth.signOut();
+                    const timeoutPromise = new Promise((_, reject) =>
+                      setTimeout(() => reject(new Error('Logout timeout')), 5000)
+                    );
+
+                    try {
+                      await Promise.race([signOutPromise, timeoutPromise]);
+                      console.log('Supabase signOut successful');
+                    } catch (error) {
+                      console.warn('Supabase signOut failed or timed out, forcing local logout:', error);
+                    }
+
+                    // Always clear auth data from localStorage
+                    localStorage.clear();
+
+                    // Clear projects and reset state
+                    setProjects([]);
+                    setActiveProjectId(null);
+                    setUser(null);
+                    setCurrentDialog(null);
+                    setViewMode('landing');
+
+                    console.log('Logout completed successfully');
+                    toast.success("Logged out successfully");
+                  } catch (error) {
+                    console.error('Logout error:', error);
+
+                    // Force logout even on error
+                    localStorage.clear();
+                    setProjects([]);
+                    setActiveProjectId(null);
+                    setUser(null);
+                    setCurrentDialog(null);
+                    setViewMode('landing');
+
+                    toast.success("Logged out successfully");
+                  }
                 }}>Log out</Button>
               </>
             ) : (
@@ -493,7 +547,10 @@ export default function App() {
       {/* Pricing and Payment dialogs hidden */}
       {/* <PricingDialog open={showPricing} onOpenChange={setShowPricing} onSelectPro={() => { setShowPricing(false); setShowPayment(true); }} />
       <PaymentDialog open={showPayment} onOpenChange={setShowPayment} onSuccess={handlePaymentSuccess} /> */}
-      <LoginDialog open={showLogin} onOpenChange={setShowLogin} onLogin={handleLogin} />
+      <LoginDialog open={showLogin} onOpenChange={setShowLogin} onLogin={() => {
+        setShowLogin(false);
+      }} />
+
       <Toaster />
     </div>
   );

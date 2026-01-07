@@ -205,7 +205,7 @@ export const Header: React.FC<HeaderProps> = ({
          {/* Existing User/Auth related UI */}
          {!user ? (
              <>
-                <Button variant="ghost" size="sm" onClick={() => setShowLogin(true)}>Login</Button>
+                <Button variant="ghost" size="sm" className="h-11 md:h-auto" onClick={() => setShowLogin(true)}>Login</Button>
                 {/* Plan button hidden */}
                 {/* <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => setShowPricing(true)}>
                     Plan

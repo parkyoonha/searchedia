@@ -510,27 +510,35 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
               size="sm"
               className={`h-8 px-3 flex items-center gap-1.5 text-xs transition-colors ml-auto ${
                 isolatedBackground
-                  ? 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
               onClick={() => {
+                console.log('[KeywordPreview] Isolated BG button clicked, current state:', isolatedBackground);
                 const newValue = !isolatedBackground;
+                console.log('[KeywordPreview] New value will be:', newValue);
                 onIsolatedBackgroundChange?.(newValue);
                 if (newValue) {
-                  // When enabling isolated background, save current keywords first
-                  const currentKeywords = aiOptimized || extractedKeywords.join(' ');
+                  // When enabling isolated background, always save current keywords
+                  const currentKeywords = (aiOptimized || extractedKeywords.join(' '))
+                    .replace(/\bisolated\s+background\b/gi, '') // Remove "isolated background" if present
+                    .trim()
+                    .replace(/\s+/g, ' '); // Normalize whitespace
                   setSavedKeywordsBeforeIsolatedBg(currentKeywords);
-                  console.log('[KeywordPreview] Saved keywords before isolated BG:', currentKeywords);
+                  console.log('[KeywordPreview] ENABLING isolated BG - Saved keywords:', currentKeywords);
 
                   // Then set keywords to "word isolated background"
                   const isolatedKeywords = `${word} isolated background`;
                   onKeywordsGenerated?.(isolatedKeywords);
                 } else {
-                  // When disabling, restore saved keywords
-                  const restoreKeywords = savedKeywordsBeforeIsolatedBg || extractedKeywords.join(' ');
-                  console.log('[KeywordPreview] Restoring keywords after isolated BG:', restoreKeywords);
+                  // When disabling, restore saved keywords (prefer saved, fallback to manual extraction)
+                  const restoreKeywords = savedKeywordsBeforeIsolatedBg && savedKeywordsBeforeIsolatedBg.trim()
+                    ? savedKeywordsBeforeIsolatedBg
+                    : extractedKeywords.join(' ');
+                  console.log('[KeywordPreview] DISABLING isolated BG - Restoring keywords:', restoreKeywords, { saved: savedKeywordsBeforeIsolatedBg, manual: extractedKeywords.join(' ') });
                   onKeywordsGenerated?.(restoreKeywords);
-                  setSavedKeywordsBeforeIsolatedBg(''); // Clear saved keywords
+                  setAiOptimized(restoreKeywords);
+                  setEditedQuery(restoreKeywords);
                 }
               }}
             >

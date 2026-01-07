@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import jsPDF from 'jspdf';
 import { Switch } from './ui/switch';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -19,7 +21,10 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger
 } from './ui/dropdown-menu';
 import {
   Dialog,
@@ -29,6 +34,7 @@ import {
   DialogDescription
 } from './ui/dialog';
 import { Badge } from './ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Checkbox } from './ui/checkbox';
 import {
@@ -44,6 +50,7 @@ import {
   Search,
   Loader2,
   ChevronDown,
+  ChevronUp,
   ArrowUpDown,
   Download,
   X,
@@ -63,7 +70,10 @@ import {
   Edit,
   ArrowDown,
   Share2,
-  Link2
+  Link2,
+  Menu,
+  Home,
+  LogOut
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
@@ -164,8 +174,9 @@ interface BulkGeneratorProps {
   duplicateProject: (id: string, newName: string) => void;
   deleteProject: (id: string) => void;
   switchActiveProject: (id: string) => void;
-  user: {id: string, name: string, email: string, plan: 'free' | 'pro'} | null;
+  user: {id: string, name: string, email: string, plan: 'free' | 'pro', avatar_url?: string} | null;
   onShowLogin: () => void;
+  onLogout: () => void;
 }
 
 type SortOption = 'newest' | 'oldest' | 'word-asc' | 'word-desc' | 'status';
@@ -289,10 +300,10 @@ function ShareForReviewDialog({ open, onOpenChange, reviewLink, onCreateSession 
   }, [open]);
 
   useEffect(() => {
-    if (reviewLink && open) {
+    if (reviewLink) {
       setLinkGenerated(true);
     }
-  }, [reviewLink, open]);
+  }, [reviewLink]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -405,7 +416,7 @@ function ShareForReviewDialog({ open, onOpenChange, reviewLink, onCreateSession 
   );
 }
 
-export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel, userPlan, credits, onUpgrade, onConsumeCredits, initialBaseKeywords, projects, activeProjectId, addProject, renameProject, duplicateProject, deleteProject, switchActiveProject, user, onShowLogin }: BulkGeneratorProps) {
+export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel, userPlan, credits, onUpgrade, onConsumeCredits, initialBaseKeywords, projects, activeProjectId, addProject, renameProject, duplicateProject, deleteProject, switchActiveProject, user, onShowLogin, onLogout }: BulkGeneratorProps) {
   const [targetCount, setTargetCount] = useState(items.length > 0 ? items.length : 1);
   const [focusNewRow, setFocusNewRow] = useState(false);
   const [columnMode, setColumnMode] = useState<'2col' | '3col'>('3col');
@@ -508,6 +519,12 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   const [showShareForReviewDialog, setShowShareForReviewDialog] = useState(false);
   const [reviewSessions, setReviewSessions] = useState<ReviewSession[]>([]);
   const [currentReviewLink, setCurrentReviewLink] = useState<string>('');
+
+  // Mobile Sidebar State
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Desktop Sidebar State
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -814,33 +831,77 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         // Update the item with modified keywords
         const updatedKeywords = itemKeywordsArray.join(' ');
         handleUpdateItem(selectedId, 'keywords', updatedKeywords);
+
+        // Auto-regenerate if in AI mode and keywords changed (only if image already exists)
+        if (item.isolated === false && addedKeywords.length > 0 && item.word && item.imageUrl) {
+          setTimeout(() => {
+            handleRegenerateItem(selectedId, { keywords: updatedKeywords });
+          }, 100);
+        }
       });
     } else {
+      const item = items.find(i => i.id === id);
       handleUpdateItem(id, 'keywords', newKeywords);
+
+      // Auto-regenerate if in AI mode and keywords changed (only if image already exists)
+      if (item && item.isolated === false && newKeywords && item.word && newKeywords !== item.keywords && item.imageUrl) {
+        setTimeout(() => {
+          handleRegenerateItem(id, { keywords: newKeywords });
+        }, 100);
+      }
     }
   };
 
   const handleAddKeywordToItem = (id: string, keyword: string) => {
-    const item = items.find(i => i.id === id);
-    if (!item) return;
+    if (isSelectionMode && selectedIds.has(id) && selectedIds.size > 1) {
+      // Apply to all selected items, each with their own description
+      selectedIds.forEach(selectedId => {
+        const item = items.find(i => i.id === selectedId);
+        if (!item) return;
 
-    const useEditMode = !!item.imageUrl || item.status === 'completed' || item.status === 'processing';
-    const currentDesc = useEditMode ? (edits[id]?.description ?? item.description) : item.description;
-    const newDesc = currentDesc ? `${currentDesc} ${keyword}` : keyword;
+        const useEditMode = !!item.imageUrl || item.status === 'completed' || item.status === 'processing';
+        const currentDesc = useEditMode ? (edits[selectedId]?.description ?? item.description) : item.description;
+        const newDesc = currentDesc ? `${currentDesc} ${keyword}` : keyword;
 
-    handleInputChange(id, 'description', newDesc);
+        handleUpdateItem(selectedId, 'description', newDesc);
+      });
+    } else {
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      const useEditMode = !!item.imageUrl || item.status === 'completed' || item.status === 'processing';
+      const currentDesc = useEditMode ? (edits[id]?.description ?? item.description) : item.description;
+      const newDesc = currentDesc ? `${currentDesc} ${keyword}` : keyword;
+
+      handleUpdateItem(id, 'description', newDesc);
+    }
   };
 
   const handleAddAllKeywordsToItem = (id: string, keywords: string[]) => {
-    const item = items.find(i => i.id === id);
-    if (!item) return;
+    if (isSelectionMode && selectedIds.has(id) && selectedIds.size > 1) {
+      // Apply to all selected items, each with their own description
+      selectedIds.forEach(selectedId => {
+        const item = items.find(i => i.id === selectedId);
+        if (!item) return;
 
-    const useEditMode = !!item.imageUrl || item.status === 'completed' || item.status === 'processing';
-    const currentDesc = useEditMode ? (edits[id]?.description ?? item.description) : item.description;
-    const keywordsText = keywords.join(' ');
-    const newDesc = currentDesc ? `${currentDesc} ${keywordsText}` : keywordsText;
+        const useEditMode = !!item.imageUrl || item.status === 'completed' || item.status === 'processing';
+        const currentDesc = useEditMode ? (edits[selectedId]?.description ?? item.description) : item.description;
+        const keywordsText = keywords.join(' ');
+        const newDesc = currentDesc ? `${currentDesc} ${keywordsText}` : keywordsText;
 
-    handleInputChange(id, 'description', newDesc);
+        handleUpdateItem(selectedId, 'description', newDesc);
+      });
+    } else {
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      const useEditMode = !!item.imageUrl || item.status === 'completed' || item.status === 'processing';
+      const currentDesc = useEditMode ? (edits[id]?.description ?? item.description) : item.description;
+      const keywordsText = keywords.join(' ');
+      const newDesc = currentDesc ? `${currentDesc} ${keywordsText}` : keywordsText;
+
+      handleUpdateItem(id, 'description', newDesc);
+    }
   };
 
 
@@ -1306,11 +1367,120 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     return paidSources.includes(source.toLowerCase());
   };
 
-  const handleExportData = (format: 'json' | 'csv' | 'excel' | 'ppt' | 'sheets') => {
+  const handleExportData = (format: 'json' | 'csv' | 'excel' | 'pdf' | 'ppt' | 'sheets') => {
     const timestamp = new Date().toISOString().slice(0,10);
 
     if (format === 'ppt') {
         toast.info("PowerPoint export requires server-side processing");
+        return;
+    }
+
+    if (format === 'pdf') {
+        const pdf = new jsPDF();
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const margin = 20;
+        let yPos = margin;
+
+        // Title
+        pdf.setFontSize(16);
+        pdf.text('Keyword Gallery Export', margin, yPos);
+        yPos += 10;
+
+        pdf.setFontSize(10);
+        pdf.text(`Exported: ${timestamp}`, margin, yPos);
+        yPos += 15;
+
+        // Process each item
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const source = item.imageSource?.[0] || 'Unknown';
+            const isFree = isFreeStock(source);
+
+            // Check if we need a new page
+            if (yPos > pageHeight - 60) {
+                pdf.addPage();
+                yPos = margin;
+            }
+
+            // Word
+            pdf.setFontSize(14);
+            pdf.setFont(undefined, 'bold');
+            pdf.text(item.word || `Item ${i + 1}`, margin, yPos);
+            yPos += 8;
+
+            // Description
+            if (item.description) {
+                pdf.setFontSize(10);
+                pdf.setFont(undefined, 'normal');
+                const descLines = pdf.splitTextToSize(item.description, pageWidth - 2 * margin);
+                pdf.text(descLines, margin, yPos);
+                yPos += descLines.length * 5 + 3;
+            }
+
+            // Keywords
+            if (item.keywords) {
+                pdf.setFontSize(9);
+                pdf.setTextColor(100, 100, 100);
+                pdf.text(`Keywords: ${item.keywords}`, margin, yPos);
+                pdf.setTextColor(0, 0, 0);
+                yPos += 7;
+            }
+
+            // Image handling
+            if (isFree && item.imageUrl) {
+                // FREE: Embed image
+                try {
+                    pdf.setFontSize(8);
+                    pdf.setTextColor(0, 100, 0);
+                    pdf.text(`[FREE Stock Image from ${source}]`, margin, yPos);
+                    pdf.setTextColor(0, 0, 0);
+                    yPos += 5;
+
+                    // Attribution
+                    if (item.photographer) {
+                        pdf.text(`Photo by ${item.photographer}`, margin, yPos);
+                        yPos += 5;
+                    }
+                    if (item.imageSourceUrl) {
+                        pdf.textWithLink('View source', margin, yPos, { url: item.imageSourceUrl });
+                        yPos += 8;
+                    }
+                } catch (err) {
+                    console.error('Error adding image info:', err);
+                    yPos += 5;
+                }
+            } else if (item.imageSourceUrl) {
+                // PAID: Show as link only
+                pdf.setFontSize(8);
+                pdf.setTextColor(200, 0, 0);
+                pdf.text(`[PAID Stock - License Required]`, margin, yPos);
+                yPos += 5;
+                pdf.setTextColor(0, 0, 255);
+                pdf.textWithLink(`View on ${source}`, margin, yPos, { url: item.imageSourceUrl });
+                pdf.setTextColor(0, 0, 0);
+                yPos += 8;
+            }
+
+            // Notes
+            if (item.note) {
+                pdf.setFontSize(9);
+                pdf.setTextColor(80, 80, 80);
+                const noteLines = pdf.splitTextToSize(`Note: ${item.note}`, pageWidth - 2 * margin);
+                pdf.text(noteLines, margin, yPos);
+                pdf.setTextColor(0, 0, 0);
+                yPos += noteLines.length * 5 + 5;
+            }
+
+            // Separator
+            pdf.setDrawColor(200, 200, 200);
+            pdf.line(margin, yPos, pageWidth - margin, yPos);
+            yPos += 10;
+        }
+
+        // Save PDF
+        pdf.save(`keyword-gallery-${timestamp}.pdf`);
+        toast.success(`Exported ${items.length} items as PDF`);
         return;
     }
 
@@ -1423,6 +1593,240 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         const paidCount = items.filter(item => isPaidStock(item.imageSource?.[0] || '')).length;
 
         toast.success(`Exported ${items.length} items (${freeCount} FREE, ${paidCount} PAID) as ${format === 'excel' ? 'Excel (CSV)' : 'CSV'}`);
+    }
+  };
+
+  const handleExportProject = (projectId: string, format: 'json' | 'csv' | 'excel' | 'pdf' | 'ppt' | 'sheets') => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+      toast.error("Project not found");
+      return;
+    }
+
+    const timestamp = new Date().toISOString().slice(0,10);
+    const projectItems = project.items;
+
+    if (projectItems.length === 0) {
+      toast.info("Project has no items to export");
+      return;
+    }
+
+    if (format === 'ppt') {
+        toast.info("PowerPoint export requires server-side processing");
+        return;
+    }
+
+    if (format === 'pdf') {
+        const pdf = new jsPDF();
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const margin = 20;
+        let yPos = margin;
+
+        // Title
+        pdf.setFontSize(16);
+        pdf.text('Keyword Gallery Export', margin, yPos);
+        yPos += 10;
+
+        pdf.setFontSize(10);
+        pdf.text(`Exported: ${timestamp}`, margin, yPos);
+        yPos += 15;
+
+        // Process each item
+        for (let i = 0; i < projectItems.length; i++) {
+            const item = projectItems[i];
+            const source = item.imageSource?.[0] || 'Unknown';
+            const isFree = isFreeStock(source);
+
+            // Check if we need a new page
+            if (yPos > pageHeight - 60) {
+                pdf.addPage();
+                yPos = margin;
+            }
+
+            // Word
+            pdf.setFontSize(14);
+            pdf.setFont(undefined, 'bold');
+            pdf.text(item.word || `Item ${i + 1}`, margin, yPos);
+            yPos += 8;
+
+            // Description
+            if (item.description) {
+                pdf.setFontSize(10);
+                pdf.setFont(undefined, 'normal');
+                const descLines = pdf.splitTextToSize(item.description, pageWidth - 2 * margin);
+                pdf.text(descLines, margin, yPos);
+                yPos += descLines.length * 5 + 3;
+            }
+
+            // Keywords
+            if (item.keywords) {
+                pdf.setFontSize(9);
+                pdf.setTextColor(100, 100, 100);
+                pdf.text(`Keywords: ${item.keywords}`, margin, yPos);
+                pdf.setTextColor(0, 0, 0);
+                yPos += 7;
+            }
+
+            // Image handling
+            if (isFree && item.imageUrl) {
+                // FREE: Embed image
+                try {
+                    pdf.setFontSize(8);
+                    pdf.setTextColor(0, 100, 0);
+                    pdf.text(`[FREE Stock Image from ${source}]`, margin, yPos);
+                    pdf.setTextColor(0, 0, 0);
+                    yPos += 5;
+
+                    // Attribution
+                    if (item.photographer) {
+                        pdf.text(`Photo by ${item.photographer}`, margin, yPos);
+                        yPos += 5;
+                    }
+                    if (item.imageSourceUrl) {
+                        pdf.textWithLink('View source', margin, yPos, { url: item.imageSourceUrl });
+                        yPos += 8;
+                    }
+                } catch (err) {
+                    console.error('Error adding image info:', err);
+                    yPos += 5;
+                }
+            } else if (item.imageSourceUrl) {
+                // PAID: Show as link only
+                pdf.setFontSize(8);
+                pdf.setTextColor(200, 0, 0);
+                pdf.text(`[PAID Stock - License Required]`, margin, yPos);
+                yPos += 5;
+                pdf.setTextColor(0, 0, 255);
+                pdf.textWithLink(`View on ${source}`, margin, yPos, { url: item.imageSourceUrl });
+                pdf.setTextColor(0, 0, 0);
+                yPos += 8;
+            }
+
+            // Notes
+            if (item.note) {
+                pdf.setFontSize(9);
+                pdf.setTextColor(80, 80, 80);
+                const noteLines = pdf.splitTextToSize(`Note: ${item.note}`, pageWidth - 2 * margin);
+                pdf.text(noteLines, margin, yPos);
+                pdf.setTextColor(0, 0, 0);
+                yPos += noteLines.length * 5 + 5;
+            }
+
+            // Separator
+            pdf.setDrawColor(200, 200, 200);
+            pdf.line(margin, yPos, pageWidth - margin, yPos);
+            yPos += 10;
+        }
+
+        // Save PDF
+        pdf.save(`keyword-gallery-${timestamp}.pdf`);
+        toast.success(`Exported ${projectItems.length} items as PDF`);
+        return;
+    }
+
+    if (format === 'sheets') {
+        toast.info("Exporting CSV for Google Sheets import");
+        format = 'csv';
+    }
+
+    if (format === 'json') {
+        const dataStr = JSON.stringify(projectItems, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${project.name}-export-${timestamp}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success(`Exported ${project.name} as JSON`);
+    } else {
+        const headers = [
+            "ID",
+            "Word",
+            "Description",
+            "Keywords",
+            "Media Type",
+            "Stock Type",
+            "Source",
+            "Source URL",
+            "Image/Video URL",
+            "Photographer",
+            "Photographer URL",
+            "License Info",
+            "Export Permission",
+            "Notes",
+            "Status",
+            "Created At"
+        ];
+
+        const rows = projectItems.map(item => {
+            const source = item.imageSource?.[0] || 'Unknown';
+            const isFree = isFreeStock(source);
+            const isPaid = isPaidStock(source);
+
+            let stockType = 'Unknown';
+            let exportPermission = 'N/A';
+            let licenseInfo = '';
+            let imageUrlForExport = '';
+
+            if (isFree) {
+                stockType = 'FREE';
+                exportPermission = 'Preview & export thumbnails allowed';
+                licenseInfo = 'Free stock – Check license before use';
+                imageUrlForExport = item.imageUrl || '';
+            } else if (isPaid) {
+                stockType = 'PAID';
+                exportPermission = 'Preview only · export links only';
+                licenseInfo = 'Paid stock – License required';
+                imageUrlForExport = item.imageSourceUrl || '';
+            } else {
+                stockType = 'Unknown';
+                exportPermission = 'Check license';
+                licenseInfo = 'Unknown source – Verify licensing';
+                imageUrlForExport = item.imageUrl || '';
+            }
+
+            return [
+                item.id,
+                `"${(item.word || '').replace(/"/g, '""')}"`,
+                `"${(item.description || '').replace(/"/g, '""')}"`,
+                `"${(item.keywords || '').replace(/"/g, '""')}"`,
+                item.mediaType || 'image',
+                stockType,
+                source,
+                item.imageSourceUrl || "",
+                imageUrlForExport,
+                item.artistName || "",
+                item.artistUrl || "",
+                licenseInfo,
+                exportPermission,
+                `"${(item.note || '').replace(/"/g, '""')}"`,
+                item.status,
+                new Date(item.createdAt).toISOString()
+            ];
+        });
+
+        const csvContent = [
+            headers.join(","),
+            ...rows.map(row => row.join(","))
+        ].join("\n");
+
+        const bom = "\uFEFF";
+        const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${project.name}-export-${timestamp}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        const freeCount = projectItems.filter(item => isFreeStock(item.imageSource?.[0] || '')).length;
+        const paidCount = projectItems.filter(item => isPaidStock(item.imageSource?.[0] || '')).length;
+
+        toast.success(`Exported ${project.name}: ${projectItems.length} items (${freeCount} FREE, ${paidCount} PAID)`);
     }
   };
 
@@ -1719,237 +2123,207 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   return (
     <>
-    <div className="max-w-full mx-auto flex gap-0 p-0 h-screen">
-      {/* Left: Settings Panel (Fixed on Scroll) */}
-      <div className="w-64 flex-shrink-0 h-full">
-        <div className="h-full overflow-y-auto flex flex-col">
+    <div className="max-w-full mx-auto flex gap-0 p-0 h-screen relative">
+      {/* Mobile Backdrop */}
+      <AnimatePresence>
+        {mobileSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setMobileSidebarOpen(false)}
+            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Left: Settings Panel */}
+      <div className={`flex-shrink-0 h-full transition-all duration-300 ease-in-out
+        ${mobileSidebarOpen ? 'fixed top-0 left-0 z-50 translate-x-0 w-[332px]' : 'fixed top-0 left-0 z-50 -translate-x-full w-[332px]'}
+        ${desktopSidebarOpen ? 'md:relative md:translate-x-0 md:w-64' : 'md:relative md:translate-x-0 md:w-0 md:overflow-hidden'}`}>
+        <div className="h-full overflow-y-auto flex flex-col w-[332px] md:w-full">
           <Card className="border-slate-200 shadow-none bg-white flex flex-col h-full rounded-none border-y-0 border-l-0">
-        {/* Home Button */}
-        <div className="px-4 py-3 border-b border-slate-100">
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-slate-100 flex justify-end items-center">
+          {/* Desktop: Collapse Button */}
           <Button
             variant="ghost"
             size="sm"
-            onClick={onCancel}
-            className="w-full justify-start text-slate-600 hover:text-slate-900"
+            onClick={() => setDesktopSidebarOpen(false)}
+            className="hidden md:flex h-8 gap-2"
           >
-            <ChevronLeft className="h-4 w-4 mr-2" />
-            Home
+            <ChevronLeft className="h-4 w-4" />
+            접기
+          </Button>
+          {/* Mobile: Close Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMobileSidebarOpen(false)}
+            className="md:hidden h-8 w-8"
+          >
+            <X className="h-5 w-5" />
           </Button>
         </div>
 
-        <CardContent className="pt-0 flex-1 overflow-y-auto">
-          <div className="flex flex-col md:flex-row gap-6 items-start md:items-end justify-between">
-             <div className="space-y-4 flex-1 w-full">
-                {/* Image/Video Toggle */}
-                <div className="mb-4">
-                   <Tabs value={mediaType} onValueChange={(v) => setMediaType(v as any)} className="w-full">
-                      <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="image" className="text-xs">
-                           <ImageIcon className="h-3.5 w-3.5 mr-2" />
-                           Image
-                        </TabsTrigger>
-                        <TabsTrigger value="video" className="text-xs">
-                           <Video className="h-3.5 w-3.5 mr-2" />
-                           Video
-                        </TabsTrigger>
-                      </TabsList>
-                    </Tabs>
+        <CardContent className="pt-4 flex-1 overflow-y-auto">
+                {/* Media Type Toggle */}
+                <div className="mb-6">
+                  <Tabs value={mediaType} onValueChange={(v) => setMediaType(v as any)} className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 h-9">
+                      <TabsTrigger value="image" className="text-xs">Image</TabsTrigger>
+                      <TabsTrigger value="video" className="text-xs">Video</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                 </div>
 
-                <div className="space-y-7">
-                   {/* Sources */}
-                   <div className="space-y-2 pt-5">
-                     <Label className="text-xs font-medium text-slate-500 uppercase">
-                       Sources<span className="text-red-500 text-xs font-bold ml-0.5">*</span>
-                     </Label>
-                     <DropdownMenu>
-                       <DropdownMenuTrigger asChild>
-                         <Button variant="outline" className="w-full justify-between font-normal h-8 px-3 rounded bg-slate-50 border-slate-200 hover:bg-white hover:border-slate-300 focus:bg-white focus:border-slate-300">
-                            {imageSource.length > 0 ? (
-                              <div className="flex gap-1 flex-wrap">
-                                {imageSource.slice(0, 3).map(s => (
-                                    <Badge key={s} variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-slate-50 text-slate-700 border border-slate-200">
-                                        {s.charAt(0).toUpperCase() + s.slice(1)}
-                                    </Badge>
-                                ))}
-                                {imageSource.length > 3 && (
-                                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-slate-500">
-                                        +{imageSource.length - 3}
-                                    </Badge>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-500 text-xs">Select sources...</span>
-                            )}
-                            <ChevronDown className="h-4 w-4 opacity-50 ml-2 shrink-0" />
-                         </Button>
-                       </DropdownMenuTrigger>
-                       <DropdownMenuContent className="w-[200px]" align="start">
-                         <DropdownMenuLabel>Free Sources</DropdownMenuLabel>
-                         <DropdownMenuSeparator />
-                         {mediaType === 'image' ? (
-                           <>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('unsplash')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'unsplash'] : p.filter(s => s !== 'unsplash'))}
-                             >
-                               Unsplash
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('pexels')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pexels'] : p.filter(s => s !== 'pexels'))}
-                             >
-                               Pexels
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('pixabay')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pixabay'] : p.filter(s => s !== 'pixabay'))}
-                             >
-                               Pixabay
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuSeparator />
-                             <DropdownMenuLabel>Premium Sources</DropdownMenuLabel>
-                             <DropdownMenuSeparator />
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('shutterstock')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'shutterstock'] : p.filter(s => s !== 'shutterstock'))}
-                             >
-                               Shutterstock
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('getty')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'getty'] : p.filter(s => s !== 'getty'))}
-                             >
-                               Getty Images
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('adobestock')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'adobestock'] : p.filter(s => s !== 'adobestock'))}
-                             >
-                               Adobe Stock
-                             </DropdownMenuCheckboxItem>
-                           </>
-                         ) : (
-                           <>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('pexels')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pexels'] : p.filter(s => s !== 'pexels'))}
-                             >
-                               Pexels
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('pixabay')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pixabay'] : p.filter(s => s !== 'pixabay'))}
-                             >
-                               Pixabay
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('mixkit')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'mixkit'] : p.filter(s => s !== 'mixkit'))}
-                             >
-                               Mixkit
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuSeparator />
-                             <DropdownMenuLabel>Premium Sources</DropdownMenuLabel>
-                             <DropdownMenuSeparator />
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('shutterstock')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'shutterstock'] : p.filter(s => s !== 'shutterstock'))}
-                             >
-                               Shutterstock
-                             </DropdownMenuCheckboxItem>
-                             <DropdownMenuCheckboxItem
-                                checked={imageSource.includes('adobestock')}
-                                onCheckedChange={(c) => setImageSource(p => c ? [...p, 'adobestock'] : p.filter(s => s !== 'adobestock'))}
-                             >
-                               Adobe Stock
-                             </DropdownMenuCheckboxItem>
-                           </>
-                         )}
-                       </DropdownMenuContent>
-                     </DropdownMenu>
-                   </div>
+                {/* Settings Section */}
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold text-slate-400 uppercase">Settings</Label>
 
-                   {/* Count per item and Grid Rows - Horizontal */}
-                   <div className="flex gap-4 items-end -my-5">
-                      <div className="space-y-2">
-                         <Label className="text-xs font-medium text-slate-500 uppercase">per item</Label>
-                         <Select value={imageCount} onValueChange={setImageCount}>
-                           <SelectTrigger className="w-24 !h-8 bg-slate-50 border-slate-200 focus:bg-white focus:border-slate-300 rounded">
-                             <SelectValue />
-                           </SelectTrigger>
-                           <SelectContent>
-                             <SelectItem value="1">1</SelectItem>
-                             <SelectItem value="2">2</SelectItem>
-                             <SelectItem value="3">3</SelectItem>
-                             <SelectItem value="4">4</SelectItem>
-                           </SelectContent>
-                         </Select>
-                      </div>
+                  {/* Sources */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-slate-600">Sources</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between font-normal h-9 px-3 rounded bg-slate-50 border-slate-200 hover:bg-white hover:border-slate-300">
+                          {imageSource.length > 0 ? (
+                            <div className="flex gap-1 flex-wrap">
+                              {imageSource.slice(0, 2).map(s => (
+                                <Badge key={s} variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-slate-50 text-slate-700 border border-slate-200">
+                                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                                </Badge>
+                              ))}
+                              {imageSource.length > 2 && (
+                                <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-slate-500">
+                                  +{imageSource.length - 2}
+                                </Badge>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 text-xs">Select sources...</span>
+                          )}
+                          <ChevronDown className="h-4 w-4 opacity-30 ml-2 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-[200px]" align="start">
+                        <DropdownMenuLabel>Free Sources</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {mediaType === 'image' ? (
+                          <>
+                            <DropdownMenuCheckboxItem
+                              checked={imageSource.includes('unsplash')}
+                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'unsplash'] : p.filter(s => s !== 'unsplash'))}
+                            >
+                              Unsplash
+                            </DropdownMenuCheckboxItem>
+                            <DropdownMenuCheckboxItem
+                              checked={imageSource.includes('pexels')}
+                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pexels'] : p.filter(s => s !== 'pexels'))}
+                            >
+                              Pexels
+                            </DropdownMenuCheckboxItem>
+                            <DropdownMenuCheckboxItem
+                              checked={imageSource.includes('pixabay')}
+                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pixabay'] : p.filter(s => s !== 'pixabay'))}
+                            >
+                              Pixabay
+                            </DropdownMenuCheckboxItem>
+                          </>
+                        ) : (
+                          <>
+                            <DropdownMenuCheckboxItem
+                              checked={imageSource.includes('pexels')}
+                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pexels'] : p.filter(s => s !== 'pexels'))}
+                            >
+                              Pexels
+                            </DropdownMenuCheckboxItem>
+                            <DropdownMenuCheckboxItem
+                              checked={imageSource.includes('pixabay')}
+                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pixabay'] : p.filter(s => s !== 'pixabay'))}
+                            >
+                              Pixabay
+                            </DropdownMenuCheckboxItem>
+                            <DropdownMenuCheckboxItem
+                              checked={imageSource.includes('mixkit')}
+                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'mixkit'] : p.filter(s => s !== 'mixkit'))}
+                            >
+                              Mixkit
+                            </DropdownMenuCheckboxItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
 
-                      <div className="space-y-2">
-                         <Label className="text-xs font-medium text-slate-500 uppercase">Grid Rows</Label>
-                         <div className="relative w-24">
-                           <Input
-                             type="number"
-                             min="1"
-                             max="50"
-                             value={targetCount}
-                             onChange={(e) => {
-                               const val = e.target.value;
-                               if (val === '') {
-                                 setTargetCount(1);
-                               } else {
-                                 const num = parseInt(val);
-                                 if (!isNaN(num) && num >= 1) {
-                                   setTargetCount(num);
-                                 }
-                               }
-                             }}
-                             className="w-full h-8 bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-300 transition-all rounded pr-6 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                           />
-                           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col gap-0">
-                             <button
-                               type="button"
-                               onClick={() => setTargetCount(prev => Math.min(50, prev + 1))}
-                               className="h-3 w-4 flex items-center justify-center hover:bg-slate-200 rounded-sm transition-colors"
-                             >
-                               <ChevronDown className="h-2.5 w-2.5 rotate-180 opacity-50" />
-                             </button>
-                             <button
-                               type="button"
-                               onClick={() => setTargetCount(prev => Math.max(1, prev - 1))}
-                               className="h-3 w-4 flex items-center justify-center hover:bg-slate-200 rounded-sm transition-colors"
-                             >
-                               <ChevronDown className="h-2.5 w-2.5 opacity-50" />
-                             </button>
-                           </div>
-                         </div>
-                      </div>
-                   </div>
+                  {/* Per Item */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-slate-600">Per Item</Label>
+                    <Select value={imageCount} onValueChange={setImageCount}>
+                      <SelectTrigger className="w-full h-9 bg-slate-50 border-slate-200 focus:bg-white focus:border-slate-300 rounded">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1</SelectItem>
+                        <SelectItem value="2">2</SelectItem>
+                        <SelectItem value="3">3</SelectItem>
+                        <SelectItem value="4">4</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                   {/* Base Keywords */}
-                   <div className="space-y-2 pb-5">
-                      <Label className="text-xs font-medium text-slate-500 uppercase">Base Keywords (Applied to all)</Label>
+                  {/* Grid Rows */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-slate-600">Grid Rows</Label>
+                    <div className="relative">
                       <Input
-                        placeholder="e.g., childrens book illustration, 4k, watercolor"
-                        value={baseKeywords}
-                        onChange={(e) => setBaseKeywords(e.target.value)}
-                        className="h-8 bg-slate-100 border-transparent focus:bg-white focus:border-slate-200 transition-all rounded"
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={targetCount}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setTargetCount(1);
+                          } else {
+                            const num = parseInt(val);
+                            if (!isNaN(num) && num >= 1) {
+                              setTargetCount(num);
+                            }
+                          }
+                        }}
+                        className="w-full h-9 bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-300 transition-all rounded pr-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
-                   </div>
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-0">
+                        <button
+                          type="button"
+                          onClick={() => setTargetCount(prev => Math.min(50, prev + 1))}
+                          className="h-3.5 w-4 flex items-center justify-center hover:bg-slate-200 rounded-sm transition-colors"
+                        >
+                          <ChevronUp className="h-3 w-3 opacity-30" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTargetCount(prev => Math.max(1, prev - 1))}
+                          className="h-3.5 w-4 flex items-center justify-center hover:bg-slate-200 rounded-sm transition-colors"
+                        >
+                          <ChevronDown className="h-3 w-3 opacity-30" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Project Folder Section */}
-                <div className="space-y-2 pt-4 border-t border-slate-100">
-                  <Label className="text-xs font-medium text-slate-500 uppercase">Project Folder</Label>
+                <div className="space-y-3 mt-10 pt-10 border-t border-slate-200">
+                  <Label className="text-xs font-bold text-slate-400 uppercase">Project Folder</Label>
 
                   {/* Project Tabs - Browser Style */}
                   <div className="flex flex-col gap-1">
                     {projects.map(project => (
                       <div
                         key={project.id}
-                        className={`flex items-center gap-1 h-8 px-2 border rounded transition-all ${
+                        className={`flex items-center gap-1 h-11 md:h-8 px-2 border rounded transition-all ${
                           project.id === activeProjectId
                             ? 'bg-white border-slate-300 shadow-sm'
                             : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
@@ -1982,6 +2356,30 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                               <Copy className="mr-2 h-4 w-4" />
                               Duplicate
                             </DropdownMenuItem>
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>
+                                <Share2 className="mr-2 h-4 w-4" />
+                                Share
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent>
+                                <DropdownMenuItem onClick={() => {
+                                  switchActiveProject(project.id);
+                                  setShowShareForReviewDialog(true);
+                                }}>
+                                  <Link2 className="mr-2 h-4 w-4" />
+                                  Share for Review
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleExportProject(project.id, 'excel')}>
+                                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                                  Excel (Links only)
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleExportProject(project.id, 'csv')}>
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  CSV
+                                </DropdownMenuItem>
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => {
                               switchActiveProject(project.id);
@@ -2009,7 +2407,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 w-full text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                        className="h-11 md:h-8 w-full text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                         onClick={handleAddNewProject}
                       >
                         <Plus className="h-3.5 w-3.5 mr-2" />
@@ -2018,8 +2416,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     )}
                   </div>
                 </div>
-             </div>
-          </div>
         </CardContent>
 
         {/* Account / Login Section */}
@@ -2035,17 +2431,38 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               Login
             </Button>
           ) : (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between px-2 py-1">
-                <span className="text-xs font-medium text-slate-700">{user.name}</span>
-                <Badge variant="secondary" className="text-[10px] h-5 px-2">
-                  {user.plan === 'pro' ? 'Pro' : 'Free'}
-                </Badge>
-              </div>
-              <div className="text-[10px] text-slate-500 px-2">
-                {user.email}
-              </div>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-full flex items-center gap-3 rounded-lg p-2 transition-colors cursor-pointer">
+                  <Avatar className="h-9 w-9">
+                    <AvatarImage src={user.avatar_url} alt={user.name} />
+                    <AvatarFallback className="bg-indigo-100 text-indigo-700 text-sm font-medium">
+                      {user.name?.[0]?.toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="text-xs font-medium text-slate-900 truncate">{user.name}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{user.email}</div>
+                  </div>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="end">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">{user.name}</p>
+                    <p className="text-xs leading-none text-slate-500">{user.email}</p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
+                  onClick={onLogout}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </Card>
@@ -2056,107 +2473,394 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
         <Card className="border-slate-200 shadow-none bg-white overflow-hidden h-full flex flex-col rounded-none border-y-0 border-r-0">
         {/* Toolbar Header - Sticky */}
-        <div className="sticky top-0 z-10 border-b border-slate-100 bg-slate-50/50 px-4 py-3 flex items-center justify-end gap-2">
-              {/* Sort Button */}
-              <Button
+        <div className="sticky top-0 z-10 bg-slate-50/50 px-4 md:py-6 py-4 flex items-center justify-between gap-2">
+              {/* Desktop Controls - Left Side */}
+              <div className="hidden md:flex items-center gap-3 ml-[1px]">
+              {/* Desktop Menu Button - Hidden when sidebar is open */}
+              {!desktopSidebarOpen && (
+                <button
+                  className="flex items-center justify-center w-8 h-8 hover:bg-slate-100 rounded transition-colors"
+                  onClick={() => setDesktopSidebarOpen(true)}
+                >
+                  <EllipsisVertical className="h-5 w-5 text-slate-500" />
+                </button>
+              )}
+
+              {/* Searchedia Home Button */}
+              <button
+                className={`flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity ${!desktopSidebarOpen ? 'ml-0' : 'ml-[30px]'}`}
+                onClick={onCancel}
+              >
+                <span className="font-bold text-2xl tracking-tight text-slate-900" style={{ fontFamily: "'Inter', sans-serif" }}>Searchedia</span>
+              </button>
+
+              </div>
+
+              {/* Right Side - Toolbar Buttons (Desktop only) */}
+              <div className="hidden md:flex items-center gap-2">
+                {/* Sort Button */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs min-w-[90px]"
+                    onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                >
+                    <ArrowUpDown className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                    {sortBy === 'newest' ? 'Newest' : 'Oldest'}
+                </Button>
+
+                {/* Selection Button */}
+                {isSelectionMode ? (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
+                          Cancel
+                      </Button>
+                      {selectedIds.size > 0 && (
+                          <>
+                            <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-slate-200 h-8 px-3">
+                              {selectedIds.size} selected - Edit any to apply to all
+                            </Badge>
+                            <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-8 text-xs">
+                              <Trash2 className="h-3.5 w-3.5 mr-2" />
+                              Delete ({selectedIds.size})
+                            </Button>
+                          </>
+                      )}
+                    </>
+                ) : (
+                    <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
+                        <CheckSquare className="mr-2 h-3.5 w-3.5 text-slate-500" /> Select
+                    </Button>
+                )}
+
+                {/* Add Row Button */}
+                <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 text-xs min-w-[90px]"
-                  onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : 'newest')}
-              >
-                  <ArrowUpDown className="h-3.5 w-3.5 mr-2 text-slate-500" />
-                  {sortBy === 'newest' ? 'Newest' : 'Oldest'}
-              </Button>
+                  onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
+                  className="h-8 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                  Add
+                </Button>
 
-              {/* Add Row Button */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
-                className="h-8 text-xs"
-              >
-                <Plus className="h-3.5 w-3.5 mr-2 text-slate-500" />
-                Add Row
-              </Button>
+                {/* Search items button */}
+                <Button
+                   onClick={handleExtractImages}
+                   className="bg-slate-800 hover:bg-slate-900 text-white h-8 text-xs"
+                   disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
+                >
+                   {(() => {
+                     const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
+                     return count > 0 ? `Search ${count} items` : 'Search items';
+                   })()}
+                </Button>
+              </div>
 
-              {/* Selection Button */}
-              {isSelectionMode ? (
-                  <>
+              {/* Mobile Toolbar Buttons - Left */}
+              <div className="md:hidden flex items-center gap-2">
+                {/* Sort Button */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs min-w-[80px]"
+                    onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                >
+                    <ArrowUpDown className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                    {sortBy === 'newest' ? 'Newest' : 'Oldest'}
+                </Button>
+
+                {/* Selection Button */}
+                {isSelectionMode ? (
                     <Button variant="ghost" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
                         Cancel
                     </Button>
-                    {selectedIds.size > 0 && (
-                        <>
-                          <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-slate-200 h-8 px-3">
-                            {selectedIds.size} selected - Edit any to apply to all
-                          </Badge>
-                          <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-8 text-xs">
-                            <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete ({selectedIds.size})
-                          </Button>
-                        </>
-                    )}
-                  </>
-              ) : (
-                  <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
-                      <CheckSquare className="mr-2 h-3.5 w-3.5 text-slate-500" /> Select
-                  </Button>
-              )}
+                ) : (
+                    <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
+                        <CheckSquare className="mr-1 h-3.5 w-3.5 text-slate-500" /> Select
+                    </Button>
+                )}
 
-              <div className="w-px h-4 bg-slate-300 mx-1" />
-
-              {/* Share for Review Button */}
-              <Button
+                {/* Add Row Button */}
+                <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
                   className="h-8 text-xs"
-                  onClick={() => setShowShareForReviewDialog(true)}
-                  disabled={items.length === 0}
-              >
-                  <Share2 className="h-3.5 w-3.5 mr-2 text-slate-500" />
-                  Share for Review
-              </Button>
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                  Add
+                </Button>
+              </div>
 
-              {/* Export Button */}
-              <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-8 text-xs">
-                          <Download className="h-3.5 w-3.5 mr-2 text-slate-500" />
-                          Export
-                      </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                      <DropdownMenuLabel>Choose Format</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <div className="px-2 py-1.5 text-xs text-slate-600 bg-slate-50">
-                        FREE sources: thumbnails included • PAID sources: links only
-                      </div>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => handleExportData('csv')}>
-                          <FileText className="mr-2 h-4 w-4 text-slate-500" />
-                          <span>CSV (.csv)</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExportData('excel')}>
-                          <FileSpreadsheet className="mr-2 h-4 w-4 text-slate-500" />
-                          <span>Excel (.xlsx)</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExportData('sheets')}>
-                          <Grid className="mr-2 h-4 w-4 text-slate-500" />
-                          <span>Google Sheets (CSV)</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => handleExportData('json')}>
-                          <FileJson className="mr-2 h-4 w-4 text-slate-500" />
-                          <span>JSON (.json)</span>
-                      </DropdownMenuItem>
-                  </DropdownMenuContent>
-              </DropdownMenu>
+              {/* Mobile Hamburger Menu - Right */}
+              <button
+                className="md:hidden flex items-center justify-center w-8 h-8 hover:bg-slate-100 rounded transition-colors ml-auto"
+                onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+              >
+                <Menu className="h-6 w-6 text-slate-500" />
+              </button>
         </div>
 
-        {/* Scrollable Table Container */}
-        <div className="flex-1 overflow-y-auto -mt-6">
+        {/* Mobile Card View */}
+        <div className="flex-1 overflow-y-auto md:hidden p-3 space-y-3">
+          {sortedItems.map((item, idx) => (
+            <Card key={item.id} className={`border-slate-300 shadow-sm ${isSelectionMode && selectedIds.has(item.id) ? 'ring-2 ring-slate-400' : ''}`}>
+              <CardContent className="p-0 space-y-0">
+                {/* # Column */}
+                <div className="px-6 pt-5 pb-4 flex items-center justify-between">
+                  <span className="text-base font-medium text-slate-400">#{item.number}</span>
+                  <div className="flex gap-1">
+                    {item.imageSourceUrl && (
+                      <a
+                        href={item.imageSourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-full transition-colors shadow-sm"
+                        title="View original"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                    {item.imageUrl && (
+                      <button
+                        onClick={() => {
+                          if (item.artistUrl && item.artistUrl.trim() !== '') {
+                            window.open(item.artistUrl, '_blank', 'noopener,noreferrer');
+                          } else if (item.artistName) {
+                            toast.info(`Artist: ${item.artistName}`);
+                          } else {
+                            toast.info('Artist information not available');
+                          }
+                        }}
+                        className="flex items-center justify-center w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-full transition-colors shadow-sm"
+                        title={item.artistName ? `Artist: ${item.artistName}` : 'Artist information not available'}
+                      >
+                        <User className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Visual Section */}
+                {showVisuals && item.imageUrl && (
+                  <div className="relative px-6 pt-1 pb-3">
+                    {/* Image */}
+                    <div className="aspect-[16/10] w-full max-w-sm mx-auto overflow-hidden relative bg-slate-100 flex items-center justify-center shadow-sm group/img">
+                      {item.mediaType === 'video' ? (
+                        <video src={item.imageUrl} className="w-full h-full object-cover" controls loop muted />
+                      ) : (
+                        <img src={item.imageUrl} alt={item.word} className="w-full h-full object-cover" />
+                      )}
+
+                      {/* Top Overlay - Status & Selection */}
+                      <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
+                        <div className="flex items-center gap-2">
+                          {isSelectionMode && (
+                            <Checkbox
+                              checked={selectedIds.has(item.id)}
+                              onCheckedChange={(checked) => handleSelectRow(item.id, checked as boolean)}
+                              className="bg-white/90 backdrop-blur-sm"
+                            />
+                          )}
+                          {item.imageSource?.[0] && (
+                            isFreeStock(item.imageSource[0]) ? (
+                              <Badge variant="secondary" className="bg-slate-800/90 text-white border-0 text-[9px] px-2 h-5 backdrop-blur-sm shadow-sm font-medium">
+                                FREE
+                              </Badge>
+                            ) : isPaidStock(item.imageSource[0]) ? (
+                              <Badge variant="secondary" className="bg-slate-900/90 text-white border-0 text-[9px] px-2 h-5 backdrop-blur-sm shadow-sm font-medium">
+                                PAID
+                              </Badge>
+                            ) : null
+                          )}
+                        </div>
+                        {item.status === 'processing' && (
+                          <Badge variant="outline" className="bg-white/90 text-slate-700 border-slate-300 gap-1 pl-1.5 pr-2 backdrop-blur-sm">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Working
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Bottom Overlay - Source */}
+                      <div className="absolute bottom-2 right-2 z-10">
+                        <Badge variant="secondary" className="bg-black/70 text-white border-0 text-[11px] px-2.5 h-6 backdrop-blur-sm shadow-sm font-normal">
+                          {item.imageSource || 'AI Generated'}
+                        </Badge>
+                      </div>
+
+                      {/* Carousel Navigation */}
+                      {item.generatedImages && item.generatedImages.length > 1 && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 bg-white/80 hover:bg-white shadow-md backdrop-blur-sm transition-opacity"
+                            onClick={() => {
+                              const currentIndex = item.selectedImageIndex || 0;
+                              const newIndex = currentIndex > 0 ? currentIndex - 1 : item.generatedImages!.length - 1;
+                              const selectedImage = item.generatedImages![newIndex];
+                              handleUpdateItem(item.id, 'selectedImageIndex', newIndex as any);
+                              handleUpdateItem(item.id, 'imageUrl', selectedImage.url as any);
+                              handleUpdateItem(item.id, 'imageSource', selectedImage.source as any);
+                              handleUpdateItem(item.id, 'imageSourceUrl', selectedImage.sourceUrl as any);
+                            }}
+                          >
+                            <ChevronLeft className="h-5 w-5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 bg-white/80 hover:bg-white shadow-md backdrop-blur-sm transition-opacity"
+                            onClick={() => {
+                              const currentIndex = item.selectedImageIndex || 0;
+                              const newIndex = currentIndex < item.generatedImages!.length - 1 ? currentIndex + 1 : 0;
+                              const selectedImage = item.generatedImages![newIndex];
+                              handleUpdateItem(item.id, 'selectedImageIndex', newIndex as any);
+                              handleUpdateItem(item.id, 'imageUrl', selectedImage.url as any);
+                              handleUpdateItem(item.id, 'imageSource', selectedImage.source as any);
+                              handleUpdateItem(item.id, 'imageSourceUrl', selectedImage.sourceUrl as any);
+                            }}
+                          >
+                            <ChevronRight className="h-5 w-5" />
+                          </Button>
+                          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20">
+                            <Badge variant="secondary" className="bg-black/60 text-white border-0 text-sm px-3 h-7 backdrop-blur-sm shadow-sm font-medium">
+                              {(item.selectedImageIndex || 0) + 1}/{item.generatedImages.length}
+                            </Badge>
+                          </div>
+                          {/* Select/Confirm button */}
+                          <Button
+                            size="sm"
+                            className="absolute bottom-2 left-1/2 -translate-x-1/2 h-11 px-16 min-w-[160px] text-base bg-slate-800 hover:bg-slate-900 text-white shadow-lg z-20"
+                            onClick={() => {
+                              handleUpdateItem(item.id, 'generatedImages', undefined as any);
+                            }}
+                          >
+                            <Check className="h-5 w-5 mr-1" />
+                            Select
+                          </Button>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Action Buttons Below Image */}
+                    <div className="flex gap-2 px-0 py-2 mt-1">
+                      <button
+                        onClick={() => {
+                          setSelectionDialogItem(item);
+                          setCandidateUrls([]);
+                          setSelectedCandidateIndex(null);
+                          setNewCandidateUrl('');
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors text-xs font-medium"
+                      >
+                        <Search className="h-4 w-4" />
+                        <span>Select</span>
+                      </button>
+                      <button
+                        onClick={() => handleRegenerateItem(item.id, { keywords: item.keywords })}
+                        disabled={item.status === 'processing' || !item.word}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${item.status === 'processing' ? 'animate-spin' : ''}`} />
+                        <span>Search</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Input Section */}
+                <div className="px-6 pb-1 space-y-2.5">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium text-slate-600 ml-1">Word</Label>
+                    <Input
+                      placeholder="Enter subject..."
+                      autoFocus={(focusNewRow && item.createdAt === maxCreatedAt) || (items.length === 1 && !item.word && idx === 0)}
+                      value={item.word}
+                      onChange={(e) => handleInputChange(item.id, 'word', e.target.value)}
+                      className="bg-slate-50 border-0 focus:bg-slate-100 focus:border-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all placeholder:text-slate-400 text-sm"
+                    />
+                  </div>
+
+                  {/* Description */}
+                  {columnMode === '3col' && (
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-slate-600 ml-1">Description</Label>
+                      <Textarea
+                        placeholder="Add details for better results..."
+                        value={item.description}
+                        onChange={(e) => handleInputChange(item.id, 'description', e.target.value)}
+                        className="bg-slate-50 border-0 focus:bg-slate-100 focus:border-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all resize-none placeholder:text-slate-400 overflow-hidden text-sm"
+                        rows={1}
+                        style={{ height: 'auto', minHeight: '2.5rem' }}
+                        onInput={(e) => {
+                          const target = e.target as HTMLTextAreaElement;
+                          target.style.height = 'auto';
+                          target.style.height = target.scrollHeight + 'px';
+                        }}
+                      />
+                      <KeywordPreview
+                        text={item.description}
+                        word={item.word}
+                        existingKeywords={item.keywords}
+                        enableAI={item.isolated === false}
+                        isolatedBackground={item.isolatedBackground}
+                        onAddKeyword={(keyword) => handleAddKeywordToItem(item.id, keyword)}
+                        onAddAllKeywords={(keywords) => handleAddAllKeywordsToItem(item.id, keywords)}
+                        onKeywordsGenerated={(keywords) => handleKeywordsChange(item.id, keywords)}
+                        onRegenerateImage={item.imageUrl ? () => handleRegenerateItem(item.id, { keywords: item.keywords }) : undefined}
+                        onIsolatedBackgroundChange={(value) => handleIsolatedBgChange(item.id, value)}
+                        onModeChange={(enabled) => handleModeChange(item.id, enabled)}
+                      />
+                    </div>
+                  )}
+
+                  {/* Note */}
+                  <div className="pt-6">
+                    <Input
+                      placeholder="Memo..."
+                      value={item.note}
+                      onChange={(e) => handleInputChange(item.id, 'note', e.target.value)}
+                      className="bg-slate-50 border-0 focus:bg-slate-100 focus:border-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all placeholder:text-slate-400 text-sm"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Mobile Bottom - Search Items Button */}
+        <div className="md:hidden sticky bottom-0 z-10 p-4 bg-white border-t border-slate-200">
+          <Button
+             onClick={handleExtractImages}
+             className="bg-slate-800 hover:bg-slate-900 text-white w-full h-11"
+             disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
+          >
+             {(() => {
+               const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
+               return count > 0 ? `Search ${count} items` : 'Search items';
+             })()}
+          </Button>
+          {isSelectionMode && selectedIds.size > 0 && (
+            <div className="flex gap-2 mt-2">
+              <Badge variant="secondary" className="flex-1 justify-center bg-slate-100 text-slate-700 border-slate-200 h-9 px-3">
+                {selectedIds.size} selected
+              </Badge>
+              <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-9">
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete ({selectedIds.size})
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Scrollable Table Container - Desktop */}
+        <div className="flex-1 overflow-y-auto -mt-6 hidden md:block">
         <Table className="m-0">
-           <TableHeader className="sticky top-0 z-10 border-t-0">
-              <TableRow>
+           <TableHeader className="sticky top-0 z-10 !border-t-0 !border-b-0">
+              <TableRow className="!border-t-0 !border-b-0 hover:bg-transparent">
                  <TableHead className="w-[20px] p-0"></TableHead>
                  {isSelectionMode && (
                    <TableHead className="w-[40px] px-2 text-center">
@@ -2166,17 +2870,17 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                      />
                    </TableHead>
                  )}
-                 <TableHead className="w-[50px] text-center font-bold text-slate-300">#</TableHead>
+                 <TableHead className="w-[50px] text-center font-bold text-slate-500">#</TableHead>
                  {showVisuals && (
                    <>
                      <TableHead className="w-[10px] p-0"></TableHead>
-                     <TableHead className="w-[200px] font-bold text-slate-300">Visual & Source</TableHead>
+                     <TableHead className="w-[200px] font-bold text-slate-500">Visual & Source</TableHead>
                    </>
                  )}
-                 <TableHead className="w-[180px] font-bold text-slate-300">Word</TableHead>
-                 {columnMode === '3col' && <TableHead className="w-[580px] font-bold text-slate-300 translate-x-5">Description</TableHead>}
+                 <TableHead className={`font-bold text-slate-500 ${desktopSidebarOpen ? 'w-[120px] translate-x-8' : 'w-[180px]'}`}>Word</TableHead>
+                 {columnMode === '3col' && <TableHead className={`w-[580px] font-bold text-slate-500 ${desktopSidebarOpen ? 'translate-x-8' : 'translate-x-5'}`}>Description</TableHead>}
                  <TableHead className="w-[40px] p-0"></TableHead>
-                 <TableHead className="w-[150px] font-bold text-slate-300">Note</TableHead>
+                 <TableHead className={`font-bold text-slate-500 ${desktopSidebarOpen ? 'w-[120px]' : 'w-[150px]'}`}>Note</TableHead>
               </TableRow>
            </TableHeader>
            <TableBody>
@@ -2224,7 +2928,8 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                </div>
                            </div>
                        ) : item.imageUrl ? (
-                           <div className="flex flex-col gap-1.5 w-44">
+                           <div className="flex gap-1 md:gap-2">
+                             <div className="flex flex-col gap-1.5 w-32 md:w-44 relative">
                                <div className="aspect-[3/2] w-full overflow-hidden border border-slate-200 shadow-sm relative group/img bg-slate-50 flex items-center justify-center">
                                     {item.mediaType === 'video' ? (
                                       <video src={item.imageUrl} className="w-full h-full object-cover" controls loop muted />
@@ -2247,9 +2952,9 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                     </div>
                                   )}
 
-                                  {/* Source Badge - Bottom Right */}
+                                  {/* Source Name Badge - Bottom Right */}
                                   <div className="absolute bottom-1 right-1">
-                                    <Badge variant="secondary" className="bg-black/60 text-white border-0 text-[9px] px-1.5 h-4 backdrop-blur-sm shadow-sm">
+                                    <Badge variant="secondary" className="bg-black/60 text-white border-0 text-[9px] px-1.5 h-4 backdrop-blur-sm shadow-sm font-normal">
                                       {item.imageSource || 'AI Generated'}
                                     </Badge>
                                   </div>
@@ -2260,7 +2965,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="absolute left-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 bg-white/80 hover:bg-white shadow-md backdrop-blur-sm opacity-0 group-hover/img:opacity-100 transition-opacity"
+                                        className="absolute left-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 bg-white/80 hover:bg-white shadow-md backdrop-blur-sm md:opacity-0 md:group-hover/img:opacity-100 transition-opacity"
                                         onClick={() => {
                                           const currentIndex = item.selectedImageIndex || 0;
                                           const newIndex = currentIndex > 0 ? currentIndex - 1 : item.generatedImages!.length - 1;
@@ -2276,7 +2981,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 bg-white/80 hover:bg-white shadow-md backdrop-blur-sm opacity-0 group-hover/img:opacity-100 transition-opacity"
+                                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 bg-white/80 hover:bg-white shadow-md backdrop-blur-sm md:opacity-0 md:group-hover/img:opacity-100 transition-opacity"
                                         onClick={() => {
                                           const currentIndex = item.selectedImageIndex || 0;
                                           const newIndex = currentIndex < item.generatedImages!.length - 1 ? currentIndex + 1 : 0;
@@ -2297,91 +3002,16 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                       {/* Select/Confirm button */}
                                       <Button
                                         size="sm"
-                                        className="absolute bottom-2 left-1/2 -translate-x-1/2 h-7 px-3 text-xs bg-slate-800 hover:bg-slate-900 text-white shadow-lg"
+                                        className="absolute bottom-1 left-1/2 -translate-x-1/2 h-6 px-2 text-xs bg-slate-800 hover:bg-slate-900 text-white shadow-lg"
                                         onClick={() => {
                                           // Keep only selected image and remove carousel
                                           handleUpdateItem(item.id, 'generatedImages', undefined as any);
                                         }}
                                       >
-                                        <Check className="h-3.5 w-3.5 mr-1" />
+                                        <Check className="h-3 w-3 mr-1" />
                                         Select
                                       </Button>
                                     </>
-                                  )}
-                               </div>
-
-                               <div className="flex items-center justify-between px-0.5">
-                                  {/* DEBUG */}
-                                  {console.log('🖼️ [RENDER] Item data:', {
-                                    id: item.id,
-                                    artistName: item.artistName,
-                                    artistUrl: item.artistUrl,
-                                    imageSource: item.imageSource
-                                  })}
-
-                                  {/* Left: Artist */}
-                                  <div className="flex items-center gap-1">
-                                    {/* Artist Button */}
-                                    {item.artistName ? (
-                                      <button
-                                        onClick={() => {
-                                          console.log('🎨 [CLICK] Artist clicked:', item.artistName, item.artistUrl);
-                                          if (item.artistUrl && item.artistUrl.trim() !== '') {
-                                            window.open(item.artistUrl, '_blank', 'noopener,noreferrer');
-                                          } else {
-                                            toast.info(`Artist: ${item.artistName}`);
-                                          }
-                                        }}
-                                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors border border-transparent hover:border-slate-300"
-                                        title={`Artist: ${item.artistName}`}
-                                      >
-                                        <User className="h-2.5 w-2.5" />
-                                        <span>artist</span>
-                                      </button>
-                                    ) : (
-                                      console.log('❌ [NO ARTIST] Missing artistName for item:', item.id)
-                                    )}
-                                  </div>
-
-                                  {/* Center: Search and Redo icon buttons */}
-                                  {item.imageUrl && (
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        onClick={() => {
-                                          setSelectionDialogItem(item);
-                                          setCandidateUrls([]);
-                                          setSelectedCandidateIndex(null);
-                                          setNewCandidateUrl('');
-                                        }}
-                                        className="flex items-center justify-center p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors border border-transparent hover:border-slate-300"
-                                        title="Search more options"
-                                      >
-                                        <Search className="h-3 w-3" />
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleRegenerateItem(item.id, { keywords: item.keywords });
-                                        }}
-                                        disabled={item.status === 'processing' || !item.word}
-                                        className="flex items-center justify-center p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors border border-transparent hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title={item.status === 'processing' ? 'Generating...' : 'Regenerate'}
-                                      >
-                                        <RefreshCw className={`h-3 w-3 ${item.status === 'processing' ? 'animate-spin' : ''}`} />
-                                      </button>
-                                    </div>
-                                  )}
-
-                                  {/* Right: Original Link */}
-                                  {item.imageSourceUrl && (
-                                    <a
-                                      href={item.imageSourceUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center justify-center p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors border border-transparent hover:border-slate-300"
-                                      title="View original on stock site"
-                                    >
-                                      <ExternalLink className="h-3 w-3" />
-                                    </a>
                                   )}
                                </div>
 
@@ -2409,28 +3039,99 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                  </div>
                                )}
                            </div>
+
+                           {/* 이미지 우측 세로 아이콘 버튼 */}
+                           {item.imageUrl && (
+                             <div className="flex flex-col justify-between items-center self-stretch">
+                               {/* 상단 그룹 */}
+                               <div className="flex flex-col gap-1 items-center">
+                                 <button
+                                   onClick={() => {
+                                     setSelectionDialogItem(item);
+                                     setCandidateUrls([]);
+                                     setSelectedCandidateIndex(null);
+                                     setNewCandidateUrl('');
+                                   }}
+                                   className="flex items-center gap-1 md:gap-1.5 px-1.5 md:px-2 py-1 md:py-1.5 w-16 md:w-20 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded transition-colors text-[10px] md:text-xs"
+                                   title="Search more options"
+                                 >
+                                   <Search className="h-3 md:h-3.5 w-3 md:w-3.5" />
+                                   <span className="text-[10px] md:text-xs font-medium">Select</span>
+                                 </button>
+                                 <button
+                                   onClick={() => {
+                                     handleRegenerateItem(item.id, { keywords: item.keywords });
+                                   }}
+                                   disabled={item.status === 'processing' || !item.word}
+                                   className="flex items-center gap-1 md:gap-1.5 px-1.5 md:px-2 py-1 md:py-1.5 w-16 md:w-20 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[10px] md:text-xs"
+                                   title={item.status === 'processing' ? 'Generating...' : 'Researching'}
+                                 >
+                                   <RefreshCw className={`h-3 md:h-3.5 w-3 md:w-3.5 ${item.status === 'processing' ? 'animate-spin' : ''}`} />
+                                   <span className="text-[10px] md:text-xs font-medium">Search</span>
+                                 </button>
+                                 {/* 로딩 상태 */}
+                                 <div className="flex items-center justify-center p-1">
+                                   {item.status === 'processing' && (
+                                     <div className="bg-white border border-slate-200 rounded-full p-0.5 shadow-sm">
+                                       <Loader2 className="h-3 md:h-3.5 w-3 md:w-3.5 text-blue-600 animate-spin" />
+                                     </div>
+                                   )}
+                                 </div>
+                               </div>
+                               {/* 하단 그룹 - 원본 링크 & Artist */}
+                               <div className="flex flex-row gap-1 items-center pb-2">
+                                 {item.imageSourceUrl && (
+                                   <a
+                                     href={item.imageSourceUrl}
+                                     target="_blank"
+                                     rel="noopener noreferrer"
+                                     className="flex items-center justify-center p-1 md:p-1.5 -ml-[12px] md:-ml-[20px] text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"
+                                     title="View original on stock site"
+                                   >
+                                     <ExternalLink className="h-3 md:h-3.5 w-3 md:w-3.5" />
+                                   </a>
+                                 )}
+                                 <button
+                                   onClick={() => {
+                                     if (item.artistUrl && item.artistUrl.trim() !== '') {
+                                       window.open(item.artistUrl, '_blank', 'noopener,noreferrer');
+                                     } else if (item.artistName) {
+                                       toast.info(`Artist: ${item.artistName}`);
+                                     } else {
+                                       toast.info('Artist information not available');
+                                     }
+                                   }}
+                                   className="flex items-center justify-center p-1 md:p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"
+                                   title={item.artistName ? `Artist: ${item.artistName}` : 'Artist information not available'}
+                                 >
+                                   <User className="h-3 md:h-3.5 w-3 md:w-3.5" />
+                                 </button>
+                               </div>
+                             </div>
+                           )}
+                           </div>
                        ) : null}
                     </TableCell>
                     </>
                     )}
-                    <TableCell className="w-[180px] font-semibold text-slate-900 align-top pt-4">
+                    <TableCell className={`font-semibold text-slate-900 align-top pt-4 ${desktopSidebarOpen ? 'w-[120px] translate-x-8' : 'w-[180px]'}`}>
                        <Input
                          placeholder="Enter subject..."
                          autoFocus={(focusNewRow && item.createdAt === maxCreatedAt) || (items.length === 1 && !item.word && idx === 0)}
                          value={item.word}
                          onChange={(e) => handleInputChange(item.id, 'word', e.target.value)}
-                         className="bg-slate-100 border-transparent focus:bg-white focus:border-slate-200 transition-all px-2 h-8 font-semibold -ml-2 w-full placeholder:font-normal placeholder:text-slate-400"
+                         className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 h-8 font-semibold -ml-2 w-full placeholder:font-normal placeholder:text-slate-300"
                        />
                     </TableCell>
                     {columnMode === '3col' && (
-                       <TableCell className="text-slate-600 align-top pt-4 w-[580px] max-w-[580px] translate-x-5">
+                       <TableCell className={`text-slate-600 align-top pt-4 w-[580px] max-w-[580px] ${desktopSidebarOpen ? 'translate-x-8' : 'translate-x-5'}`}>
                           <div className="space-y-2 -ml-2">
                             <div className="relative">
                               <Textarea
                                 placeholder="Add details for better results..."
                                 value={item.description}
                                 onChange={(e) => handleInputChange(item.id, 'description', e.target.value)}
-                                className="bg-slate-100 border-transparent focus:bg-white focus:border-slate-200 transition-all px-2 py-1.5 min-h-[32px] h-auto leading-tight text-slate-500 w-full resize-none overflow-hidden"
+                                className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 py-1.5 min-h-[32px] h-auto leading-tight text-slate-500 w-full resize-none overflow-hidden placeholder:text-slate-300"
                                 rows={1}
                                 style={{ height: 'auto' }}
                                 onInput={(e) => {
@@ -2462,12 +3163,12 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                        </TableCell>
                     )}
                     <TableCell className="w-[40px] p-0"></TableCell>
-                    <TableCell className="text-slate-600 align-top pt-4">
+                    <TableCell className={`text-slate-600 align-top pt-4 ${desktopSidebarOpen ? 'w-[120px]' : 'w-[150px]'}`}>
                         <Input
                             placeholder="Memo..."
                             value={item.note}
                             onChange={(e) => handleInputChange(item.id, 'note', e.target.value)}
-                            className="bg-slate-100 border-transparent focus:bg-white focus:border-slate-200 transition-all px-2 h-8 text-slate-500 text-sm -ml-2 w-full"
+                            className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 h-8 text-slate-500 text-sm -ml-2 w-full placeholder:text-slate-300"
                         />
                     </TableCell>
                  </TableRow>
@@ -2476,22 +3177,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         </Table>
         </div>
 
-        {/* Action Footer - Sticky */}
-        <div className="sticky bottom-0 z-10 border-t border-slate-200 p-4 bg-white flex justify-end gap-4">
-           <Button variant="ghost" onClick={onCancel}>
-              Cancel
-           </Button>
-           <Button
-              onClick={handleExtractImages}
-              className="bg-slate-800 hover:bg-slate-900 text-white min-w-[150px]"
-              disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
-           >
-              {(() => {
-                const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
-                return count > 0 ? `Search ${count} items` : 'Search items';
-              })()}
-           </Button>
-        </div>
       </Card>
       </div>
     </div>
@@ -2501,9 +3186,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Manual Selection</DialogTitle>
-            <DialogDescription>
-              Select or import {selectionDialogItem?.mediaType === 'video' ? 'video' : 'image'} for "{selectionDialogItem?.word}"
-            </DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="candidates" className="flex-1 flex flex-col overflow-hidden">
@@ -2514,88 +3196,46 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
             {/* Candidates Tab */}
             <TabsContent value="candidates" className="flex-1 overflow-y-auto mt-4">
+              {/* Instruction Text */}
+              <p className="text-[13px] text-slate-500 mb-5">
+                Click keywordlink &gt; <span className="text-blue-600 font-semibold">Right click image &gt; Click(copy) image address</span> &gt; Paste
+              </p>
+
+              {/* Keyword Link Button and URL Input - Horizontal Layout */}
+              <div className="flex gap-2 mb-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-blue-500 text-blue-600 hover:bg-blue-50 hover:text-blue-700 shrink-0"
+                  onClick={() => {
+                    if (selectionDialogItem?.keywords && imageSource.length > 0) {
+                      const url = generateStockSiteSearchUrl(imageSource[0], selectionDialogItem.keywords, selectionDialogItem.mediaType);
+                      window.open(url, '_blank');
+                    } else {
+                      toast.info('Please select a source first');
+                    }
+                  }}
+                >
+                  <Search className="h-3.5 w-3.5 mr-2" />
+                  Keyword Link
+                </Button>
+                <Input
+                  placeholder={`Paste ${selectionDialogItem?.mediaType === 'video' ? 'video' : 'image'} URL here...`}
+                  value={newCandidateUrl}
+                  onChange={(e) => setNewCandidateUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleAddCandidateUrl();
+                    }
+                  }}
+                  className="flex-1 border-2 border-slate-300 focus:border-slate-500"
+                />
+                <Button onClick={handleAddCandidateUrl} disabled={!newCandidateUrl.trim()} className="px-3 shrink-0">
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+              </div>
+
               <div className="space-y-4">
-                {/* Link Buttons */}
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (selectionDialogItem?.keywords && imageSource.length > 0) {
-                        const url = generateStockSiteSearchUrl(imageSource[0], selectionDialogItem.keywords, selectionDialogItem.mediaType);
-                        window.open(url, '_blank');
-                      } else {
-                        toast.info('Please select a source first');
-                      }
-                    }}
-                  >
-                    <Search className="h-3.5 w-3.5 mr-2" />
-                    Keyword Link
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (selectionDialogItem?.artistName && selectionDialogItem?.artistUrl) {
-                        window.open(selectionDialogItem.artistUrl, '_blank');
-                      } else {
-                        toast.info('No artist info available');
-                      }
-                    }}
-                  >
-                    <User className="h-3.5 w-3.5 mr-2" />
-                    Artist Link
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (selectionDialogItem?.imageSourceUrl) {
-                        window.open(selectionDialogItem.imageSourceUrl, '_blank');
-                      } else {
-                        toast.info('No original link available');
-                      }
-                    }}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                    Original Link
-                  </Button>
-                </div>
-
-                {/* Instructions */}
-                <div className="bg-slate-50 border border-slate-200 rounded-md p-4 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <span className="text-lg">💡</span>
-                    <div className="flex-1 text-sm text-slate-700">
-                      <p className="font-semibold mb-2">How to get {selectionDialogItem?.mediaType === 'video' ? 'video' : 'image'} URL:</p>
-                      <ol className="list-decimal list-inside space-y-1 text-xs">
-                        <li>Click one of the link buttons above to open stock site</li>
-                        <li><strong>Right-click on the {selectionDialogItem?.mediaType === 'video' ? 'video' : 'image'}</strong> you like</li>
-                        <li>Select <strong>"Copy Image Address"</strong> or <strong>"Copy Image Link"</strong></li>
-                        <li>Paste the URL in the input box below</li>
-                        <li>Click Add button</li>
-                      </ol>
-                    </div>
-                  </div>
-                </div>
-
-                {/* URL Input */}
-                <div className="flex gap-2">
-                  <Input
-                    placeholder={`Paste ${selectionDialogItem?.mediaType === 'video' ? 'video' : 'image'} URL here...`}
-                    value={newCandidateUrl}
-                    onChange={(e) => setNewCandidateUrl(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleAddCandidateUrl();
-                      }
-                    }}
-                    className="flex-1 border-2 border-slate-300 focus:border-slate-500"
-                  />
-                  <Button onClick={handleAddCandidateUrl} disabled={!newCandidateUrl.trim()} className="px-3">
-                    <ArrowDown className="h-4 w-4" />
-                  </Button>
-                </div>
 
                 {/* Candidate Images Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">

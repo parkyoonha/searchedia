@@ -1,56 +1,28 @@
 import { Project } from '../App';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Get user ID from localStorage
-function getUserId(): string | null {
-  try {
-    const authData = localStorage.getItem('sb-uvrzqnatomfqapysejdf-auth-token');
-    if (!authData) return null;
-    const parsed = JSON.parse(authData);
-    return parsed?.user?.id || null;
-  } catch {
-    return null;
-  }
-}
-
-// Get auth token from localStorage
-function getAuthToken(): string | null {
-  try {
-    const authData = localStorage.getItem('sb-uvrzqnatomfqapysejdf-auth-token');
-    if (!authData) return null;
-    const parsed = JSON.parse(authData);
-    return parsed?.access_token || null;
-  } catch {
-    return null;
-  }
-}
+import { supabase } from './supabase';
 
 /**
  * Load all projects for the current user from Supabase
  */
 export async function loadProjectsFromDB(): Promise<Project[]> {
   try {
-    const token = getAuthToken();
-    const userId = getUserId();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      console.log('No active session for loading projects');
+      return [];
+    }
 
-    if (!token || !userId) return [];
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: true });
 
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/projects?user_id=eq.${userId}&order=created_at.asc`,
-      {
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    if (error) {
+      console.error('Error loading projects:', error);
+      return [];
+    }
 
-    if (!response.ok) return [];
-
-    const data = await response.json();
     return data || [];
   } catch (error) {
     console.error('Error loading projects:', error);
@@ -63,34 +35,42 @@ export async function loadProjectsFromDB(): Promise<Project[]> {
  */
 export async function saveProjectToDB(project: Project, userId?: string): Promise<boolean> {
   try {
-    const token = getAuthToken();
-    const currentUserId = userId || getUserId();
+    const { data: { session } } = await supabase.auth.getSession();
+    const currentUserId = userId || session?.user?.id;
 
-    if (!token || !currentUserId) return false;
+    if (!currentUserId) {
+      console.error("No user ID available for saveProjectToDB");
+      return false;
+    }
 
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/projects`,
-      {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify({
-          id: project.id,
-          user_id: currentUserId,
-          name: project.name,
-          items: project.items
-        })
-      }
-    );
+    const projectData = {
+      id: project.id,
+      user_id: currentUserId,
+      name: project.name,
+      items: project.items,
+      updated_at: new Date().toISOString()
+    };
 
-    return response.ok;
+    console.log('Attempting to save project:', projectData);
+
+    const { data, error } = await supabase
+      .from('projects')
+      .upsert(projectData, {
+        onConflict: 'id'
+      })
+      .select();
+
+    if (error) {
+      console.error(`Failed to save project ${project.id}:`, error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      throw new Error(`Failed to save project ${project.id}: ${error.message}`);
+    }
+
+    console.log(`Project ${project.id} saved successfully. Response:`, data);
+    return true;
   } catch (error) {
-    console.error('Error saving project:', error);
-    return false;
+    console.error('Error in saveProjectToDB:', error);
+    throw error;
   }
 }
 
@@ -99,23 +79,29 @@ export async function saveProjectToDB(project: Project, userId?: string): Promis
  */
 export async function deleteProjectFromDB(projectId: string, userId?: string): Promise<boolean> {
   try {
-    const token = getAuthToken();
-    if (!token) return false;
+    const { data: { session } } = await supabase.auth.getSession();
+    const currentUserId = userId || session?.user?.id;
 
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/projects?id=eq.${projectId}${userId ? `&user_id=eq.${userId}` : ''}`,
-      {
-        method: 'DELETE',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        }
-      }
-    );
+    if (!currentUserId) {
+      console.error('No user ID available for delete operation');
+      return false;
+    }
 
-    return response.ok;
+    console.log('Deleting project:', { projectId, userId: currentUserId });
+
+    const { error } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', projectId)
+      .eq('user_id', currentUserId);
+
+    if (error) {
+      console.error('Delete failed:', error);
+      return false;
+    }
+
+    console.log('Project deleted successfully:', projectId);
+    return true;
   } catch (error) {
     console.error('Error deleting project:', error);
     return false;
@@ -127,15 +113,23 @@ export async function deleteProjectFromDB(projectId: string, userId?: string): P
  */
 export async function syncProjectsToDB(projects: Project[], userId?: string): Promise<boolean> {
   try {
-    const currentUserId = userId || getUserId();
-    if (!currentUserId) return false;
+    const { data: { session } } = await supabase.auth.getSession();
+    const currentUserId = userId || session?.user?.id;
+
+    if (!currentUserId) {
+      console.error('No user ID available for syncing projects');
+      return false;
+    }
+
+    console.log(`Syncing ${projects.length} projects for user ${currentUserId}`);
 
     const promises = projects.map(project => saveProjectToDB(project, currentUserId));
     await Promise.all(promises);
 
+    console.log(`Successfully synced ${projects.length} projects`);
     return true;
   } catch (error) {
     console.error('Error syncing projects:', error);
-    return false;
+    throw error;
   }
 }

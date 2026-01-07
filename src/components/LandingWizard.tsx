@@ -23,6 +23,16 @@ import {
   DropdownMenuTrigger
 } from './ui/dropdown-menu';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from './ui/alert-dialog';
+import {
   Image as ImageIcon,
   Box,
   Palette,
@@ -42,7 +52,8 @@ import {
   Check,
   Plus,
   X,
-  ChevronDown
+  ChevronDown,
+  Info
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import { getRandomShutterstockImage } from '../services/shutterstock';
@@ -80,9 +91,6 @@ const SOURCES = [
   { id: 'pexels', name: 'Pexels', type: 'free', media: ['image', 'video'], description: 'Best free stock photos & videos' },
   { id: 'pixabay', name: 'Pixabay', type: 'free', media: ['image', 'video'], description: 'Stunning free images & royalty free stock' },
   { id: 'mixkit', name: 'Mixkit', type: 'free', media: ['video'], description: 'Awesome free video assets' },
-  { id: 'shutterstock', name: 'Shutterstock', type: 'paid', media: ['image', 'video'], description: 'Premium stock photos and footage' },
-  { id: 'getty', name: 'Getty Images', type: 'paid', media: ['image'], description: 'Premium stock photography' },
-  { id: 'adobestock', name: 'Adobe Stock', type: 'paid', media: ['image', 'video'], description: 'Royalty-free stock photos and video' },
 ];
 
 const STYLES = {
@@ -187,6 +195,8 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     description: string;
     keywords?: string;
     baseKeywords?: string;
+    isolatedBackground?: boolean;
+    isolated?: boolean;
   }>({
     mediaType: 'image',
     sources: [],
@@ -194,12 +204,14 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     word: '',
     description: '',
     keywords: '',
-    baseKeywords: ''
+    baseKeywords: '',
+    isolatedBackground: false,
+    isolated: true
   });
 
   // Brief Generate state
-  const [briefItems, setBriefItems] = useState<Array<{ id: string; word: string; description: string; isolated?: boolean; keywords?: string }>>([
-    { id: '1', word: '', description: '', isolated: true, keywords: '' }
+  const [briefItems, setBriefItems] = useState<Array<{ id: string; word: string; description: string; isolated?: boolean; keywords?: string; isolatedBackground?: boolean }>>([
+    { id: '1', word: '', description: '', isolated: true, keywords: '', isolatedBackground: false }
   ]);
   const [briefSettings, setBriefSettings] = useState({
     sources: ['unsplash', 'pexels', 'pixabay'],
@@ -394,6 +406,8 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     let imageUrl = '';
     let imageSource = 'AI';
     let imageSourceUrl = '';
+    let photographer = '';
+    let photographerUrl = '';
 
     try {
       console.log('[LandingWizard] 🔍 Generating', count, 'media(s):', {
@@ -437,6 +451,8 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
             imageUrl = currentResult.imageUrl;
             imageSource = currentResult.source;
             imageSourceUrl = currentResult.sourceUrl;
+            photographer = currentResult.photographer || '';
+            photographerUrl = currentResult.photographerUrl || '';
           }
         } else {
           // Fallback to AI-generated image
@@ -491,6 +507,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
       }
     }
 
+    console.log('[LandingWizard] 🔍 Completing with isolated state:', selections.isolated);
     onComplete({
       mediaType: selections.mediaType,
       sources: selections.sources,
@@ -503,9 +520,12 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
           imageUrl: imageUrl,
           imageSource: imageSource,
           imageSourceUrl: imageSourceUrl,
+          photographer: photographer,
+          photographerUrl: photographerUrl,
           mediaType: selections.mediaType,
           generatedImages: generatedImages,
-          selectedImageIndex: 0
+          selectedImageIndex: 0,
+          isolated: selections.isolated
       }]
     });
   };
@@ -640,20 +660,20 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
             onRef={el => sectionRefs.current[0] = el}
             onStepChange={setStep}
           >
-             <div className="w-full h-full flex flex-col justify-center items-start pb-12 pt-0 pl-32 pr-8 -mt-7">
+             <div className="w-full h-full flex flex-col justify-center items-center md:items-start pb-12 pt-0 px-6 md:pl-[calc(8rem-0.5cm)] md:pr-8 mt-[calc(-1.75rem+0.5cm)]">
                 {/* Title */}
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900 m-0 p-0 mb-8">
+                <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 m-0 p-0 mb-8 text-center md:text-left">
                     <TypingAnimation text="Save time on" /><br />
                     <TypingAnimation text="searching stock assets." delay={700} />
                 </h1>
 
-                {/* Buttons (horizontal) */}
-                <div className="flex flex-row gap-4">
+                {/* Buttons (horizontal on desktop, vertical on mobile) */}
+                <div className="flex flex-col md:flex-row gap-4">
                     <motion.div
                         initial={{ width: 210 }}
                         animate={{ width: 310 }}
                         transition={{ duration: 0.5, delay: 1.5 }}
-                        className="overflow-visible"
+                        className="overflow-visible w-full md:w-auto"
                     >
                         <Button
                             size="lg"
@@ -668,11 +688,11 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 2.5, duration: 0.5 }}
-                        className="w-auto"
+                        className="w-full md:w-auto relative"
                     >
                         <Button
                             size="lg"
-                            className="h-14 px-16 text-lg font-bold rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-all hover:scale-105 border-0 outline-none focus:outline-none whitespace-nowrap min-w-[228px]"
+                            className="h-14 px-16 text-lg font-bold rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-all hover:scale-105 border-0 outline-none focus:outline-none whitespace-nowrap w-full md:min-w-[228px]"
                             onClick={() => onComplete({
                                 mediaType: 'image',
                                 sources: [],
@@ -684,6 +704,46 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                             Batch Search
                             <ArrowRight className="ml-2 h-5 w-5" />
                         </Button>
+
+                        {/* About License Button */}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <button className="absolute -bottom-6 right-0 text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 transition-colors">
+                              <Info className="h-3 w-3" />
+                              about license
+                            </button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle className="flex items-center gap-2">
+                                <Info className="h-5 w-5 text-blue-600" />
+                                Image License Notice
+                              </AlertDialogTitle>
+                              <AlertDialogDescription className="space-y-4 pt-2">
+                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                                  <p className="font-semibold text-amber-900 text-sm">⚠️ Important Notice</p>
+                                  <p className="text-sm text-slate-700">Images displayed are <span className="text-red-600 font-semibold">preview thumbnails only</span> and are not licensed for commercial use.</p>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <p className="font-semibold text-slate-900 text-sm">To use these images:</p>
+                                  <ul className="space-y-1 text-sm text-slate-700">
+                                    <li>• Visit the <span className="text-red-600 font-semibold">original stock website</span></li>
+                                    <li>• Purchase or download the full-resolution image</li>
+                                    <li>• Review and comply with the licensing terms</li>
+                                  </ul>
+                                </div>
+
+                                <div className="bg-slate-50 rounded-lg p-3">
+                                  <p className="text-xs text-slate-600">This tool helps you find and organize stock images. You are responsible for obtaining proper licenses before using any images.</p>
+                                </div>
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogAction className="bg-blue-600 hover:bg-blue-700">I Understand</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                     </motion.div>
                 </div>
 
@@ -714,6 +774,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                             word={briefItems[0].word}
                             existingKeywords={briefItems[0].keywords}
                             enableAI={briefItems[0].isolated === false}
+                            isolatedBackground={briefItems[0].isolatedBackground}
                             onAddKeyword={(keyword) => {
                                 const newDesc = briefItems[0].description ? `${briefItems[0].description} ${keyword}` : keyword;
                                 handleUpdateBriefItem(briefItems[0].id, 'description', newDesc);
@@ -727,6 +788,16 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                                 setBriefItems(prev => prev.map((i, idx) =>
                                     idx === 0 ? { ...i, keywords } : i
                                 ));
+                            }}
+                            onIsolatedBackgroundChange={(value) => {
+                                console.log('[LandingWizard] onIsolatedBackgroundChange called with value:', value);
+                                setBriefItems(prev => {
+                                    const updated = prev.map((i, idx) =>
+                                        idx === 0 ? { ...i, isolatedBackground: value } : i
+                                    );
+                                    console.log('[LandingWizard] Updated briefItems:', updated[0]);
+                                    return updated;
+                                });
                             }}
                             onModeChange={(enabled) => {
                                 setBriefItems(prev => prev.map((i, idx) =>
@@ -1021,12 +1092,12 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                      }}
                      autoFocus={step === 4}
                    />
-                   <div className="absolute right-2 top-2 bottom-2">
+                   <div className="absolute right-2 top-1/2 -translate-y-1/2">
                      <Button
                        size="icon"
                        disabled={!selections.word}
                        onClick={handleNext}
-                       className="h-full aspect-square rounded-md bg-blue-600 hover:bg-blue-700"
+                       className="w-10 h-10 rounded-md bg-blue-600 hover:bg-blue-700"
                      >
                        <ArrowRight className="h-5 w-5" />
                      </Button>
@@ -1062,9 +1133,19 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                      text={selections.description}
                      word={selections.word}
                      existingKeywords={selections.keywords}
+                     enableAI={selections.isolated === false}
+                     isolatedBackground={selections.isolatedBackground}
                      onAddKeyword={handleAddKeyword}
                      onAddAllKeywords={handleAddAllKeywords}
                      onKeywordsGenerated={(keywords) => updateSelection('keywords', keywords)}
+                     onIsolatedBackgroundChange={(value) => {
+                       console.log('[LandingWizard Step5] onIsolatedBackgroundChange called with value:', value);
+                       updateSelection('isolatedBackground', value);
+                     }}
+                     onModeChange={(enabled) => {
+                       console.log('[LandingWizard Step5] onModeChange called with enabled:', enabled);
+                       updateSelection('isolated', !enabled);
+                     }}
                    />
 
                    <div className="space-y-2 pt-2 hidden">
