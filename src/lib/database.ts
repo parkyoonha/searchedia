@@ -26,7 +26,6 @@ export async function loadProjectsFromDB(): Promise<Project[]> {
     }
 
     console.log('[DB] Loaded projects from DB:', data?.length || 0, 'projects');
-    console.log('[DB] Project data:', data);
 
     return data || [];
   } catch (error) {
@@ -158,7 +157,7 @@ export async function loadFoldersFromDB(): Promise<Folder[]> {
       .from('folders')
       .select('*')
       .eq('user_id', session.user.id)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true});
 
     if (error) {
       console.error('[DB] Error loading folders:', error);

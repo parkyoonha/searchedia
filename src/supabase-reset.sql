@@ -6,6 +6,7 @@ DROP TRIGGER IF EXISTS update_projects_updated_at ON projects;
 DROP TRIGGER IF EXISTS update_review_sessions_updated_at ON review_sessions;
 DROP FUNCTION IF EXISTS update_updated_at_column();
 DROP TABLE IF EXISTS review_sessions CASCADE;
+DROP TABLE IF EXISTS folders CASCADE;
 DROP TABLE IF EXISTS projects CASCADE;
 
 -- Create projects table
@@ -14,6 +15,7 @@ CREATE TABLE projects (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   name TEXT NOT NULL,
   items JSONB DEFAULT '[]'::jsonb,
+  folder_id TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -54,6 +56,39 @@ $$ language 'plpgsql';
 -- Create trigger to auto-update updated_at
 CREATE TRIGGER update_projects_updated_at BEFORE UPDATE ON projects
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Create folders table
+CREATE TABLE folders (
+  id TEXT PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  parent_id TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE folders ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can only access their own folders
+CREATE POLICY "Users can view their own folders"
+  ON folders FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own folders"
+  ON folders FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own folders"
+  ON folders FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own folders"
+  ON folders FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Create index for better performance
+CREATE INDEX idx_folders_user_id ON folders(user_id);
+CREATE INDEX idx_folders_created_at ON folders(created_at DESC);
 
 -- Create review_sessions table
 CREATE TABLE review_sessions (

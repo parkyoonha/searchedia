@@ -226,67 +226,86 @@ export default function App() {
       console.log('[App] Loading user data...');
       hasLoadedData = true;
 
-      setUser({
-        id: session.user.id,
-        name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
-        email: session.user.email || '',
-        plan: 'pro',
-        avatar_url: session.user.user_metadata?.picture
-      });
+      try {
+        setUser({
+          id: session.user.id,
+          name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+          email: session.user.email || '',
+          plan: 'pro',
+          avatar_url: session.user.user_metadata?.picture
+        });
 
-      // Load projects and folders from DB
-      console.log('[App] Loading projects from DB...');
-      const dbProjects = await loadProjectsFromDB();
-      console.log('[App] Loaded projects from DB:', dbProjects.length);
-
-      console.log('[App] Loading folders from DB...');
-      const dbFolders = await loadFoldersFromDB();
-      console.log('[App] Loaded folders from DB:', dbFolders.length);
-
-      if (dbProjects.length > 0) {
-        setProjects(dbProjects);
-        setActiveProjectId(dbProjects[0].id);
-        const savedViewMode = localStorage.getItem('geminiViewMode');
-        if (savedViewMode === 'bulk') {
-          setViewMode('bulk');
-        }
-        toast.success(`Loaded ${dbProjects.length} projects from cloud`);
-      } else {
-        // If no DB projects, sync localStorage projects to DB
+        // Load from localStorage first (instant)
         const localProjects = localStorage.getItem('geminiProjects');
+        const localFolders = localStorage.getItem('geminiFolders');
+
         if (localProjects) {
           const parsed = JSON.parse(localProjects);
           if (parsed.length > 0) {
-            console.log('[App] Syncing localStorage projects to DB:', parsed.length);
-            await syncProjectsToDB(parsed, session.user.id);
+            console.log('[App] Loading from localStorage:', parsed.length, 'projects');
             setProjects(parsed);
             setActiveProjectId(parsed[0].id);
             const savedViewMode = localStorage.getItem('geminiViewMode');
             if (savedViewMode === 'bulk') {
               setViewMode('bulk');
             }
-            toast.success('Synced local projects to cloud');
           }
         }
-      }
 
-      if (dbFolders.length > 0) {
-        setFolders(dbFolders);
-      } else {
-        // If no DB folders, sync localStorage folders to DB
-        const localFolders = localStorage.getItem('geminiFolders');
         if (localFolders) {
           const parsed = JSON.parse(localFolders);
           if (parsed.length > 0) {
-            console.log('[App] Syncing localStorage folders to DB:', parsed.length);
-            await syncFoldersToDB(parsed, session.user.id);
+            console.log('[App] Loading from localStorage:', parsed.length, 'folders');
             setFolders(parsed);
           }
         }
-      }
 
-      setIsInitialLoadComplete(true);
-      setShowLogin(false);
+        // Then try to load from DB in background (with short timeout)
+        console.log('[App] Loading from DB in background...');
+        Promise.race([
+          loadProjectsFromDB(),
+          new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2000))
+        ]).then(dbProjects => {
+          if (dbProjects.length > 0) {
+            console.log('[App] Loaded from DB:', dbProjects.length, 'projects');
+            setProjects(dbProjects);
+            setActiveProjectId(dbProjects[0].id);
+          } else if (localProjects) {
+            // Sync localStorage to DB
+            const parsed = JSON.parse(localProjects);
+            if (parsed.length > 0) {
+              syncProjectsToDB(parsed, session.user.id).catch(err =>
+                console.error('[App] Failed to sync projects:', err)
+              );
+            }
+          }
+        }).catch(err => console.error('[App] Error loading projects from DB:', err));
+
+        Promise.race([
+          loadFoldersFromDB(),
+          new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2000))
+        ]).then(dbFolders => {
+          if (dbFolders.length > 0) {
+            console.log('[App] Loaded from DB:', dbFolders.length, 'folders');
+            setFolders(dbFolders);
+          } else if (localFolders) {
+            // Sync localStorage to DB
+            const parsed = JSON.parse(localFolders);
+            if (parsed.length > 0) {
+              syncFoldersToDB(parsed, session.user.id).catch(err =>
+                console.error('[App] Failed to sync folders:', err)
+              );
+            }
+          }
+        }).catch(err => console.error('[App] Error loading folders from DB:', err));
+      } catch (error) {
+        console.error('[App] Error loading user data:', error);
+        toast.error('Failed to load data from cloud. Using local data.');
+      } finally {
+        // Always complete initial load, even if there was an error
+        setIsInitialLoadComplete(true);
+        setShowLogin(false);
+      }
     };
 
     // Listen for auth changes (this handles both initial session and new logins)
