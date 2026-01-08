@@ -29,33 +29,19 @@ export function ReviewModeWrapper() {
 
   const checkAuthAndLoadSession = async () => {
     try {
-      // Check if user is logged in
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session?.user) {
-        // Not logged in, show login dialog
-        setShowLogin(true);
-        setLoading(false);
-        return;
-      }
-
-      // User is logged in, set user state
-      setUser({
-        id: session.user.id,
-        name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
-        email: session.user.email || '',
-        plan: 'pro',
-        avatar_url: session.user.user_metadata?.picture
-      });
-
-      // Load review session
+      // Load review session first (no login required for public review links)
       if (!token) {
         toast.error('Invalid review link');
         navigate('/');
         return;
       }
 
-      const result = await loadReviewSession(token);
+      const reviewPromise = loadReviewSession(token);
+      const reviewTimeoutPromise = new Promise<any>((_, reject) =>
+        setTimeout(() => reject(new Error('Review session load timeout')), 5000)
+      );
+
+      const result = await Promise.race([reviewPromise, reviewTimeoutPromise]);
 
       if (!result.success || !result.session) {
         toast.error(result.error || 'Failed to load review session');
@@ -65,11 +51,35 @@ export function ReviewModeWrapper() {
 
       setReviewSession(result.session);
       setItems(result.session.items);
+
+      // Check if user is logged in (optional, for additional features)
+      try {
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<any>((resolve) =>
+          setTimeout(() => resolve({ data: { session: null } }), 2000)
+        );
+
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
+
+        if (session?.user) {
+          setUser({
+            id: session.user.id,
+            name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+            email: session.user.email || '',
+            plan: 'pro',
+            avatar_url: session.user.user_metadata?.picture
+          });
+        }
+      } catch (authError) {
+        console.log('Auth check skipped:', authError);
+      }
+
       setLoading(false);
+      setShowLogin(false);
 
     } catch (error) {
       console.error('Error loading review session:', error);
-      toast.error('Failed to load review session');
+      toast.error('Failed to load review session: ' + (error as Error).message);
       navigate('/');
     }
   };
@@ -87,12 +97,22 @@ export function ReviewModeWrapper() {
         });
         setShowLogin(false);
 
-        // Reload session after login
+        // Reload session after login with timeout
         if (token) {
-          const result = await loadReviewSession(token);
-          if (result.success && result.session) {
-            setReviewSession(result.session);
-            setItems(result.session.items);
+          try {
+            const reviewPromise = loadReviewSession(token);
+            const timeoutPromise = new Promise<any>((_, reject) =>
+              setTimeout(() => reject(new Error('Timeout')), 5000)
+            );
+            const result = await Promise.race([reviewPromise, timeoutPromise]);
+
+            if (result.success && result.session) {
+              setReviewSession(result.session);
+              setItems(result.session.items);
+              setLoading(false);
+            }
+          } catch (error) {
+            console.error('Error loading review session after login:', error);
             setLoading(false);
           }
         }
@@ -128,26 +148,6 @@ export function ReviewModeWrapper() {
     );
   }
 
-  if (showLogin || !user) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-50">
-        <div className="max-w-md w-full mx-4">
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">Login Required</h1>
-            <p className="text-sm text-slate-600">
-              You need to be logged in to review this session.
-            </p>
-          </div>
-          <LoginDialog
-            open={true}
-            onOpenChange={() => {}}
-            onLogin={() => setShowLogin(false)}
-          />
-        </div>
-      </div>
-    );
-  }
-
   if (!reviewSession) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50">
@@ -165,7 +165,7 @@ export function ReviewModeWrapper() {
       onDelete={() => {}} // Disabled in review mode
       onGenerate={() => {}} // Disabled in review mode
       onCancel={() => navigate('/')}
-      userPlan={user.plan}
+      userPlan={user?.plan || 'free'}
       credits={0}
       onUpgrade={() => {}}
       onConsumeCredits={() => {}}
