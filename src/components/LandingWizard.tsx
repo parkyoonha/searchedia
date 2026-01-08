@@ -127,6 +127,8 @@ interface LandingWizardProps {
       mediaType?: 'image' | 'video';
       generatedImages?: Array<{ url: string; source: string; sourceUrl: string }>;
       selectedImageIndex?: number;
+      isolated?: boolean;
+      isolatedBackground?: boolean;
     }>;
   }) => void;
 }
@@ -364,12 +366,27 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     // Use existing keywords if available, otherwise generate new ones
     let searchTerms = '';
 
-    if (selections.keywords && selections.keywords.trim().length > 0) {
+    console.log('[LandingWizard] 🔍 handleFinalSubmit - Current state:', {
+      isolatedBackground: selections.isolatedBackground,
+      isolated: selections.isolated,
+      keywords: selections.keywords,
+      word: selections.word
+    });
+
+    // Priority order:
+    // 1. Isolated Background mode (highest priority)
+    // 2. Pre-generated keywords from KeywordPreview
+    // 3. AI mode or Manual mode
+    if (selections.isolatedBackground) {
+      // Manual mode + Isolated background - ALWAYS use this when isolatedBackground is true
+      searchTerms = `${selections.word} isolated background`;
+      console.log('[LandingWizard] 🎯 Isolated background mode (PRIORITY):', searchTerms);
+    } else if (selections.keywords && selections.keywords.trim().length > 0) {
       // Use pre-generated keywords from KeywordPreview
       searchTerms = selections.keywords;
-      console.log('[LandingWizard] ✅ Using existing keywords:', searchTerms);
-    } else {
-      // Try AI optimization first, fallback to manual extraction
+      console.log('[LandingWizard] ✅ Using keywords from KeywordPreview:', searchTerms);
+    } else if (selections.isolated === false) {
+      // AI mode - Try AI optimization first, fallback to manual extraction
       try {
         const aiResult = await optimizeKeywordsWithAI(selections.description, selections.word);
 
@@ -386,6 +403,11 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
         searchTerms = keywords.replace(/#/g, '').replace(/\s+/g, ' ');
         console.log('[LandingWizard] Manual keywords:', searchTerms);
       }
+    } else {
+      // Manual mode - use manual extraction (fallback)
+      const keywords = extractKeywords(selections.description, selections.word);
+      searchTerms = keywords.replace(/#/g, '').replace(/\s+/g, ' ');
+      console.log('[LandingWizard] 🎯 Manual mode keywords (fallback):', searchTerms);
     }
 
     // Ensure searchTerms is not empty
@@ -394,10 +416,11 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
       console.log('[LandingWizard] ⚠️ Empty keywords, using fallback:', searchTerms);
     }
 
-    // Prepend base keywords if they exist
+    // Prepend base keywords only in AI mode (isolated = false)
     let finalSearchTerms = searchTerms;
-    if (selections.baseKeywords && selections.baseKeywords.trim()) {
+    if (!selections.isolated && selections.baseKeywords && selections.baseKeywords.trim()) {
       finalSearchTerms = `${selections.baseKeywords.trim()} ${searchTerms}`;
+      console.log('[LandingWizard] Added base keywords (AI mode):', finalSearchTerms);
     }
 
     // Generate multiple images based on count setting
@@ -507,7 +530,12 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
       }
     }
 
-    console.log('[LandingWizard] 🔍 Completing with isolated state:', selections.isolated);
+    console.log('[LandingWizard] 🔍 Completing with:', {
+      isolated: selections.isolated,
+      isolatedBackground: selections.isolatedBackground,
+      searchTerms: searchTerms,
+      selectionsKeywords: selections.keywords
+    });
     onComplete({
       mediaType: selections.mediaType,
       sources: selections.sources,
@@ -525,7 +553,8 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
           mediaType: selections.mediaType,
           generatedImages: generatedImages,
           selectedImageIndex: 0,
-          isolated: selections.isolated
+          isolated: selections.isolated,
+          isolatedBackground: selections.isolatedBackground
       }]
     });
   };

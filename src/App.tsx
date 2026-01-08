@@ -45,12 +45,20 @@ import {
 import { toast, Toaster } from "sonner";
 import { PricingDialog, PaymentDialog, LoginDialog } from './components/subscription/SubscriptionModals';
 import { supabase } from './lib/supabase';
-import { loadProjectsFromDB, saveProjectToDB, deleteProjectFromDB, syncProjectsToDB } from './lib/database';
+import { loadProjectsFromDB, saveProjectToDB, deleteProjectFromDB, syncProjectsToDB, loadFoldersFromDB, syncFoldersToDB, deleteFolderFromDB } from './lib/database';
+
+export interface Folder {
+  id: string;
+  name: string;
+  parentId?: string | null; // null for root folders, string for nested folders
+  createdAt: number;
+}
 
 export interface Project {
   id: string;
   name: string;
   items: BulkItem[];
+  folderId?: string | null; // null for root-level projects
 }
 
 // Helper function to generate random IDs
@@ -58,13 +66,52 @@ const getRandomId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
+// Helper function to create an empty BulkItem
+const createEmptyBulkItem = (number: number = 1): any => {
+  return {
+    id: getRandomId(),
+    number: number,
+    word: '',
+    description: '',
+    keywords: '',
+    note: '',
+    status: 'pending' as const,
+    history: [],
+    createdAt: Date.now(),
+    isolated: false,
+    isolatedBackground: false,
+    usedImageUrls: [],
+    currentPage: 1
+  };
+};
+
 export default function App() {
-  const [viewMode, setViewMode] = useState<'bulk' | 'landing'>('landing');
+  const [viewMode, setViewMode] = useState<'bulk' | 'landing'>(() => {
+    // Restore viewMode from localStorage on initial load
+    const saved = localStorage.getItem('geminiViewMode');
+    return (saved as 'bulk' | 'landing') || 'landing';
+  });
   const [currentDialog, setCurrentDialog] = useState<string | null>(null);
 
   // Project State
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
+
+  // Folder State
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('geminiExpandedFolders');
+    if (saved) {
+      try {
+        return new Set(JSON.parse(saved));
+      } catch {
+        return new Set();
+      }
+    }
+    return new Set();
+  });
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null); // For adding projects inside folders
 
   // Subscription State
   const [user, setUser] = useState<{id: string, name: string, email: string, plan: 'free' | 'pro', avatar_url?: string} | null>(null);
@@ -82,20 +129,71 @@ export default function App() {
 
   // Save projects to DB when logged in (don't use localStorage when logged out)
   useEffect(() => {
+    // Skip saving during initial load to prevent overwriting DB with empty array
+    if (!isInitialLoadComplete) {
+      console.log('[App] Skipping save - initial load not complete');
+      return;
+    }
+
     // Only save if user is logged in
     if (user && projects.length > 0) {
+      console.log('[App] Saving projects to DB:', projects.length, 'projects');
       // Save to localStorage for backup
       localStorage.setItem('geminiProjects', JSON.stringify(projects));
       // Save to DB
-      syncProjectsToDB(projects, user.id).catch(err =>
-        console.error('Failed to sync projects to DB:', err)
-      );
+      syncProjectsToDB(projects, user.id)
+        .then(() => console.log('[App] Successfully synced projects to DB'))
+        .catch(err => console.error('[App] Failed to sync projects to DB:', err));
     } else if (!user) {
+      console.log('[App] User logged out, clearing localStorage');
       // Clear localStorage when logged out
       localStorage.removeItem('geminiProjects');
       localStorage.removeItem('geminiActiveProjectId');
+      localStorage.removeItem('geminiFolders');
+      localStorage.removeItem('geminiExpandedFolders');
     }
-  }, [projects, user]);
+  }, [projects, user, isInitialLoadComplete]);
+
+  // Save folders to localStorage and DB
+  useEffect(() => {
+    if (!isInitialLoadComplete) {
+      return;
+    }
+
+    if (user && folders.length > 0) {
+      localStorage.setItem('geminiFolders', JSON.stringify(folders));
+      console.log('[App] Saved folders to localStorage:', folders.length);
+      // Save to DB
+      syncFoldersToDB(folders, user.id)
+        .then(() => console.log('[App] Successfully synced folders to DB'))
+        .catch(err => console.error('[App] Failed to sync folders to DB:', err));
+    } else if (!user) {
+      localStorage.removeItem('geminiFolders');
+    }
+  }, [folders, user, isInitialLoadComplete]);
+
+  // Load folders from localStorage on mount
+  useEffect(() => {
+    const savedFolders = localStorage.getItem('geminiFolders');
+    if (savedFolders) {
+      try {
+        const parsed = JSON.parse(savedFolders);
+        setFolders(parsed);
+        console.log('[App] Loaded folders from localStorage:', parsed.length);
+      } catch (error) {
+        console.error('[App] Failed to parse folders from localStorage:', error);
+      }
+    }
+  }, []);
+
+  // Save expanded folders to localStorage
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('geminiExpandedFolders', JSON.stringify(Array.from(expandedFolders)));
+    } else {
+      localStorage.removeItem('geminiExpandedFolders');
+    }
+  }, [expandedFolders, user]);
 
   // Save active project ID to localStorage (only when logged in)
   useEffect(() => {
@@ -106,10 +204,22 @@ export default function App() {
     }
   }, [activeProjectId, user]);
 
+  // Save viewMode to localStorage
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('geminiViewMode', viewMode);
+    } else {
+      localStorage.removeItem('geminiViewMode');
+    }
+  }, [viewMode, user]);
+
   // Supabase auth state listener
   useEffect(() => {
+    let isInitialLoad = true;
+
     // Check current session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('[App] getSession called, session exists:', !!session);
       if (session?.user) {
         setUser({
           id: session.user.id,
@@ -119,32 +229,80 @@ export default function App() {
           avatar_url: session.user.user_metadata?.picture
         });
 
-        // Load projects from DB when logged in
+        // Load projects and folders from DB when logged in
+        console.log('[App] Loading projects from DB...');
         const dbProjects = await loadProjectsFromDB();
+        console.log('[App] Loaded projects from DB:', dbProjects.length, dbProjects);
+
+        console.log('[App] Loading folders from DB...');
+        const dbFolders = await loadFoldersFromDB();
+        console.log('[App] Loaded folders from DB:', dbFolders.length, dbFolders);
+
         if (dbProjects.length > 0) {
           setProjects(dbProjects);
           setActiveProjectId(dbProjects[0].id);
+          // If viewMode is still 'landing' and we have projects, switch to bulk
+          const savedViewMode = localStorage.getItem('geminiViewMode');
+          if (savedViewMode === 'bulk') {
+            setViewMode('bulk');
+          }
           toast.success(`Loaded ${dbProjects.length} projects from cloud`);
         } else {
           // If no DB projects, sync localStorage projects to DB
           const localProjects = localStorage.getItem('geminiProjects');
+          console.log('[App] No DB projects, checking localStorage:', !!localProjects);
           if (localProjects) {
             const parsed = JSON.parse(localProjects);
             if (parsed.length > 0) {
+              console.log('[App] Syncing localStorage projects to DB:', parsed.length);
               await syncProjectsToDB(parsed, session.user.id);
+              setProjects(parsed);
+              setActiveProjectId(parsed[0].id);
+              // If viewMode is still 'landing' and we have projects, switch to bulk
+              const savedViewMode = localStorage.getItem('geminiViewMode');
+              if (savedViewMode === 'bulk') {
+                setViewMode('bulk');
+              }
               toast.success('Synced local projects to cloud');
             }
           }
         }
+
+        if (dbFolders.length > 0) {
+          setFolders(dbFolders);
+        } else {
+          // If no DB folders, sync localStorage folders to DB
+          const localFolders = localStorage.getItem('geminiFolders');
+          if (localFolders) {
+            const parsed = JSON.parse(localFolders);
+            if (parsed.length > 0) {
+              console.log('[App] Syncing localStorage folders to DB:', parsed.length);
+              await syncFoldersToDB(parsed, session.user.id);
+              setFolders(parsed);
+            }
+          }
+        }
       }
+      isInitialLoad = false;
+      setIsInitialLoadComplete(true);
+      console.log('[App] Initial load complete');
     });
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log('[App] onAuthStateChange event:', _event, 'isInitialLoad:', isInitialLoad);
+
+      // Skip if this is the initial SIGNED_IN event (already handled by getSession above)
+      if (isInitialLoad && _event === 'INITIAL_SESSION') {
+        console.log('[App] Skipping INITIAL_SESSION event');
+        return;
+      }
+
       if (session?.user) {
-        // User logged in
+        // User logged in (new login, not initial session)
+        console.log('[App] Auth state change - user signed in');
         const loggedInUser = {
           id: session.user.id,
           name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
@@ -155,22 +313,61 @@ export default function App() {
         setUser(loggedInUser);
         setShowLogin(false);
 
-        // Load projects from cloud
-        const dbProjects = await loadProjectsFromDB();
-        setProjects(dbProjects);
-        setActiveProjectId(dbProjects[0]?.id || null);
+        // Only load projects and folders if this is not the initial load
+        if (!isInitialLoad) {
+          console.log('[App] Loading projects from cloud (auth state change)...');
+          const dbProjects = await loadProjectsFromDB();
+          console.log('[App] Loaded projects:', dbProjects.length);
 
-        if (dbProjects.length > 0) {
-          toast.success(`Loaded ${dbProjects.length} projects from your account.`);
+          console.log('[App] Loading folders from cloud (auth state change)...');
+          const dbFolders = await loadFoldersFromDB();
+          console.log('[App] Loaded folders:', dbFolders.length);
+
+          if (dbProjects.length > 0) {
+            setProjects(dbProjects);
+            setActiveProjectId(dbProjects[0].id);
+            toast.success(`Loaded ${dbProjects.length} projects from your account.`);
+          } else {
+            // If no DB projects, sync localStorage projects to DB
+            const localProjects = localStorage.getItem('geminiProjects');
+            if (localProjects) {
+              const parsed = JSON.parse(localProjects);
+              if (parsed.length > 0) {
+                await syncProjectsToDB(parsed, session.user.id);
+                setProjects(parsed);
+                setActiveProjectId(parsed[0].id);
+                toast.success('Synced local projects to cloud');
+              }
+            }
+          }
+
+          if (dbFolders.length > 0) {
+            setFolders(dbFolders);
+          } else {
+            // If no DB folders, sync localStorage folders to DB
+            const localFolders = localStorage.getItem('geminiFolders');
+            if (localFolders) {
+              const parsed = JSON.parse(localFolders);
+              if (parsed.length > 0) {
+                await syncFoldersToDB(parsed, session.user.id);
+                setFolders(parsed);
+              }
+            }
+          }
         }
 
       } else {
         // User logged out
+        console.log('[App] Auth state change - user signed out');
         setUser(null);
         // On logout, we could decide to keep local projects or clear them.
         // For now, we clear them to ensure a clean state for the next user.
         setProjects([]);
         setActiveProjectId(null);
+        setFolders([]);
+        setExpandedFolders(new Set());
+        setCurrentFolderId(null);
+        setViewMode('landing');
       }
     });
 
@@ -220,7 +417,7 @@ export default function App() {
     toast.success(`Deleted ${itemsToDelete.length} items from active project`);
   };
 
-  const handleBulkGenerate = (newItems: Array<{word: string, description: string, keywords?: string, imageUrl?: string, imageSource?: string, imageSourceUrl?: string, photographer?: string, photographerUrl?: string, mediaType?: 'image' | 'video', generatedImages?: Array<{ url: string; source: string; sourceUrl: string }>, selectedImageIndex?: number, isolated?: boolean}>, settings: { sources: string[], count: string, mediaType: 'image' | 'video', baseKeywords?: string }) => {
+  const handleBulkGenerate = (newItems: Array<{word: string, description: string, keywords?: string, imageUrl?: string, imageSource?: string, imageSourceUrl?: string, photographer?: string, photographerUrl?: string, mediaType?: 'image' | 'video', generatedImages?: Array<{ url: string; source: string; sourceUrl: string }>, selectedImageIndex?: number, isolated?: boolean, isolatedBackground?: boolean}>, settings: { sources: string[], count: string, mediaType: 'image' | 'video', baseKeywords?: string }) => {
     setViewMode('bulk');
 
     // If logged in and projects exist, add items to existing project instead of creating new one
@@ -246,7 +443,8 @@ export default function App() {
         mediaType: item.mediaType || settings.mediaType,
         generatedImages: item.generatedImages,
         selectedImageIndex: item.selectedImageIndex,
-        isolated: item.isolated
+        isolated: item.isolated,
+        isolatedBackground: item.isolatedBackground
       }));
 
       setProjects(prev => prev.map(p =>
@@ -287,7 +485,8 @@ export default function App() {
         mediaType: item.mediaType || settings.mediaType,
         generatedImages: item.generatedImages,
         selectedImageIndex: item.selectedImageIndex,
-        isolated: item.isolated
+        isolated: item.isolated,
+        isolatedBackground: item.isolatedBackground
     }));
 
     newProject.items = generatedItems;
@@ -297,16 +496,25 @@ export default function App() {
 };
 
   // Project Management Functions
-  const addProject = (name: string) => {
+  const addProject = (name: string, folderId?: string | null) => {
     const newProject: Project = {
       id: getRandomId(),
       name: name,
-      items: [],
+      items: [createEmptyBulkItem(1)], // Add first empty item
+      folderId: folderId || currentFolderId || null,
     };
     setProjects(prev => [...prev, newProject]);
     setActiveProjectId(newProject.id);
     setViewMode('bulk'); // Switch to bulk mode when a new project is added
-    toast.success(`Project "${name}" created.`);
+
+    const folderName = folderId || currentFolderId
+      ? folders.find(f => f.id === (folderId || currentFolderId))?.name
+      : null;
+    const location = folderName ? ` in folder "${folderName}"` : '';
+    toast.success(`Project "${name}" created${location}.`);
+
+    // Reset current folder ID
+    setCurrentFolderId(null);
   };
 
   const renameProject = (id: string, newName: string) => {
@@ -359,11 +567,7 @@ export default function App() {
           setActiveProjectId(updatedProjects[0].id);
         }
 
-        // Renumber remaining projects
-        return updatedProjects.map((p, index) => ({
-          ...p,
-          name: `Project ${index + 1}`
-        }));
+        return updatedProjects;
       });
       toast.success(`Project "${projectToDelete.name}" deleted.`);
     } catch (error: any) {
@@ -375,6 +579,88 @@ export default function App() {
   const switchActiveProject = (id: string) => {
     setActiveProjectId(id);
     toast.info(`Switched to project "${projects.find(p => p.id === id)?.name}".`);
+  };
+
+  // Folder Management Functions
+  const addFolder = (name: string, parentId?: string | null) => {
+    const newFolder: Folder = {
+      id: getRandomId(),
+      name: name,
+      parentId: parentId || null,
+      createdAt: Date.now()
+    };
+    setFolders(prev => [...prev, newFolder]);
+    // Auto-expand the new folder
+    setExpandedFolders(prev => new Set([...prev, newFolder.id]));
+    toast.success(`Folder "${name}" created.`);
+  };
+
+  const renameFolder = (id: string, newName: string) => {
+    setFolders(prev =>
+      prev.map(f => (f.id === id ? { ...f, name: newName } : f))
+    );
+    toast.success(`Folder renamed to "${newName}".`);
+  };
+
+  const deleteFolder = async (id: string) => {
+    const folderToDelete = folders.find(f => f.id === id);
+    if (!folderToDelete) return;
+
+    // Check if folder has child folders
+    const hasChildFolders = folders.some(f => f.parentId === id);
+    if (hasChildFolders) {
+      toast.error("Cannot delete folder with subfolders. Delete subfolders first.");
+      return;
+    }
+
+    // Delete all projects inside folder
+    const projectsInFolder = projects.filter(p => p.folderId === id);
+    if (projectsInFolder.length > 0) {
+      // Delete projects from DB if user is logged in
+      if (user) {
+        await Promise.all(
+          projectsInFolder.map(p => deleteProjectFromDB(p.id, user.id))
+        );
+      }
+
+      // Remove projects from state
+      setProjects(prev => prev.filter(p => p.folderId !== id));
+
+      // If active project was in this folder, clear selection
+      if (activeProjectId && projectsInFolder.some(p => p.id === activeProjectId)) {
+        setActiveProjectId(null);
+      }
+    }
+
+    // Delete folder from DB if user is logged in
+    if (user) {
+      await deleteFolderFromDB(id, user.id);
+    }
+
+    setFolders(prev => prev.filter(f => f.id !== id));
+    toast.success(`Folder "${folderToDelete.name}" and ${projectsInFolder.length} project(s) deleted.`);
+  };
+
+  const moveProjectToFolder = (projectId: string, folderId: string | null) => {
+    setProjects(prev =>
+      prev.map(p => (p.id === projectId ? { ...p, folderId: folderId } : p))
+    );
+    const project = projects.find(p => p.id === projectId);
+    const folder = folderId ? folders.find(f => f.id === folderId) : null;
+    const locationText = folder ? `"${folder.name}"` : "root";
+    toast.success(`Moved "${project?.name}" to ${locationText}`);
+  };
+
+  const toggleFolderExpanded = (folderId: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
   };
 
   return (
@@ -450,6 +736,15 @@ export default function App() {
                  duplicateProject={duplicateProject}
                  deleteProject={deleteProject}
                  switchActiveProject={switchActiveProject}
+                 folders={folders}
+                 expandedFolders={expandedFolders}
+                 addFolder={addFolder}
+                 renameFolder={renameFolder}
+                 deleteFolder={deleteFolder}
+                 moveProjectToFolder={moveProjectToFolder}
+                 toggleFolderExpanded={toggleFolderExpanded}
+                 currentFolderId={currentFolderId}
+                 setCurrentFolderId={setCurrentFolderId}
                  user={user}
                  onShowLogin={() => setShowLogin(true)}
                  onLogout={() => setCurrentDialog('logout')}

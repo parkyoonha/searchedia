@@ -73,7 +73,11 @@ import {
   Link2,
   Menu,
   Home,
-  LogOut
+  LogOut,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  File
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
@@ -92,6 +96,7 @@ import { KeywordPreview } from './KeywordPreview';
 import { optimizeKeywordsWithAI } from '../services/ai';
 import { ProjectNameDialog } from './project/ProjectNameDialog';
 import { ConfirmDeleteProjectDialog } from './project/ConfirmDeleteProjectDialog';
+import { submitReviewResults } from '../lib/reviewDatabase';
 
 // Generate stock site search URL based on source and keywords
 function generateStockSiteSearchUrl(source: string, keywords: string, mediaType: 'image' | 'video' = 'image'): string {
@@ -156,6 +161,13 @@ export interface ReviewSession {
   maxViews: number;
 }
 
+interface Folder {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  createdAt: number;
+}
+
 interface BulkGeneratorProps {
   items: BulkItem[];
   setItems: React.Dispatch<React.SetStateAction<BulkItem[]>>;
@@ -167,16 +179,30 @@ interface BulkGeneratorProps {
   onUpgrade: () => void;
   onConsumeCredits: (amount: number) => void;
   initialBaseKeywords?: string;
-  projects: Array<{ id: string; name: string; items: BulkItem[] }>;
+  projects: Array<{ id: string; name: string; items: BulkItem[]; folderId?: string | null }>;
   activeProjectId: string | null;
-  addProject: (name: string) => void;
+  addProject: (name: string, folderId?: string | null) => void;
   renameProject: (id: string, newName: string) => void;
   duplicateProject: (id: string, newName: string) => void;
   deleteProject: (id: string) => void;
   switchActiveProject: (id: string) => void;
+  folders: Folder[];
+  expandedFolders: Set<string>;
+  addFolder: (name: string, parentId?: string | null) => void;
+  renameFolder: (id: string, newName: string) => void;
+  deleteFolder: (id: string) => void;
+  moveProjectToFolder: (projectId: string, folderId: string | null) => void;
+  toggleFolderExpanded: (folderId: string) => void;
+  currentFolderId: string | null;
+  setCurrentFolderId: (id: string | null) => void;
   user: {id: string, name: string, email: string, plan: 'free' | 'pro', avatar_url?: string} | null;
   onShowLogin: () => void;
   onLogout: () => void;
+  reviewMode?: {
+    isReviewMode: boolean;
+    shareToken: string;
+    creatorId: string;
+  };
 }
 
 type SortOption = 'newest' | 'oldest' | 'word-asc' | 'word-desc' | 'status';
@@ -416,7 +442,222 @@ function ShareForReviewDialog({ open, onOpenChange, reviewLink, onCreateSession 
   );
 }
 
-export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel, userPlan, credits, onUpgrade, onConsumeCredits, initialBaseKeywords, projects, activeProjectId, addProject, renameProject, duplicateProject, deleteProject, switchActiveProject, user, onShowLogin, onLogout }: BulkGeneratorProps) {
+// Folder Tree Item Component
+function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeProjectId, level, currentFolderId, onToggleExpand, onRenameFolder, onDeleteFolder, onAddSubfolder, onSwitchProject, onRenameProject, onDuplicateProject, onDeleteProject, onShareProject, onExportProject, onMoveProject, onSelectFolder }: any) {
+  const isExpanded = expandedFolders.has(folder.id);
+  const isSelected = currentFolderId === folder.id;
+  const childFolders = allFolders.filter((f: any) => f.parentId === folder.id);
+  const childProjects = projects.filter((p: any) => p.folderId === folder.id);
+  const FolderIcon = isExpanded ? FolderOpen : Folder;
+
+  return (
+    <>
+      <div
+        className={`flex items-center gap-1 h-8 px-2 rounded transition-all ${
+          isSelected
+            ? 'bg-blue-50 hover:bg-blue-100'
+            : 'hover:bg-slate-50'
+        }`}
+        style={{ paddingLeft: `${level * 12 + 8}px` }}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-4 w-4 p-0 hover:bg-slate-200 rounded"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleExpand(folder.id);
+          }}
+        >
+          <ChevronRight className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+        </Button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 w-5 p-0 hover:bg-slate-200 rounded"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <EllipsisVertical className="h-3 w-3 text-slate-400" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-40" align="start">
+            <DropdownMenuItem onClick={() => onRenameFolder(folder.id)}>
+              <Edit className="mr-2 h-4 w-4" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onAddSubfolder(folder.id)}>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              New Subfolder
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onDeleteFolder(folder.id)} className="text-red-600 focus:text-red-600 focus:bg-red-50">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div
+          className="flex items-center gap-1.5 flex-1 cursor-pointer"
+          onClick={() => {
+            onSelectFolder(folder.id);
+            if (!isExpanded) {
+              onToggleExpand(folder.id);
+            }
+          }}
+        >
+          <FolderIcon className="h-3.5 w-3.5 text-slate-500" />
+          <span className="text-xs text-slate-700 font-medium">{folder.name}</span>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <>
+          {childFolders.map((childFolder: any) => (
+            <FolderTreeItem
+              key={childFolder.id}
+              folder={childFolder}
+              allFolders={allFolders}
+              projects={projects}
+              expandedFolders={expandedFolders}
+              activeProjectId={activeProjectId}
+              level={level + 1}
+              currentFolderId={currentFolderId}
+              onToggleExpand={onToggleExpand}
+              onRenameFolder={onRenameFolder}
+              onDeleteFolder={onDeleteFolder}
+              onAddSubfolder={onAddSubfolder}
+              onSwitchProject={onSwitchProject}
+              onRenameProject={onRenameProject}
+              onDuplicateProject={onDuplicateProject}
+              onDeleteProject={onDeleteProject}
+              onShareProject={onShareProject}
+              onExportProject={onExportProject}
+              onMoveProject={onMoveProject}
+              onSelectFolder={onSelectFolder}
+            />
+          ))}
+
+          {childProjects.map((project: any) => (
+            <ProjectTreeItem
+              key={project.id}
+              project={project}
+              isActive={project.id === activeProjectId}
+              level={level + 1}
+              onSwitch={onSwitchProject}
+              onRename={onRenameProject}
+              onDuplicate={onDuplicateProject}
+              onDelete={onDeleteProject}
+              onShare={onShareProject}
+              onExport={onExportProject}
+              onMove={onMoveProject}
+              folders={allFolders}
+            />
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+
+// Project Tree Item Component
+function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDuplicate, onDelete, onShare, onExport, onMove, folders }: any) {
+  return (
+    <div
+      className={`flex items-center gap-1 h-8 px-2 rounded transition-all ${
+        isActive
+          ? 'bg-white border border-slate-300 shadow-sm'
+          : 'hover:bg-slate-50'
+      }`}
+      style={{ paddingLeft: `${level * 12 + 28}px` }}
+    >
+      {/* Menu dropdown - now visible and clickable */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 w-5 p-0 hover:bg-slate-200 rounded"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <EllipsisVertical className="h-3 w-3 text-slate-400" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-40" align="start">
+          <DropdownMenuItem onClick={() => onRename(project.id)}>
+            <Edit className="mr-2 h-4 w-4" />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onDuplicate(project.id)}>
+            <Copy className="mr-2 h-4 w-4" />
+            Duplicate
+          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Move to
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem onClick={() => onMove(project.id, null)}>
+                <Home className="mr-2 h-4 w-4" />
+                Root
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {folders.map((folder: any) => (
+                <DropdownMenuItem key={folder.id} onClick={() => onMove(project.id, folder.id)}>
+                  <Folder className="mr-2 h-4 w-4" />
+                  {folder.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Share2 className="mr-2 h-4 w-4" />
+              Share
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem onClick={() => onShare(project.id)}>
+                <Link2 className="mr-2 h-4 w-4" />
+                Share for Review
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onExport(project.id, 'excel')}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Excel (Links only)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport(project.id, 'csv')}>
+                <FileText className="mr-2 h-4 w-4" />
+                CSV
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => onDelete(project.id)} className="text-red-600 focus:text-red-600 focus:bg-red-50">
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Only this area is clickable for project switching */}
+      <div
+        className="flex items-center gap-1.5 flex-1 cursor-pointer px-1 hover:opacity-80 transition-opacity"
+        onClick={() => onSwitch(project.id)}
+      >
+        <File className="h-3 w-3 text-slate-400" />
+        <span className={`text-xs ${isActive ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
+          {project.name}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel, userPlan, credits, onUpgrade, onConsumeCredits, initialBaseKeywords, projects, activeProjectId, addProject, renameProject, duplicateProject, deleteProject, switchActiveProject, folders, expandedFolders, addFolder, renameFolder, deleteFolder, moveProjectToFolder, toggleFolderExpanded, currentFolderId, setCurrentFolderId, user, onShowLogin, onLogout, reviewMode }: BulkGeneratorProps) {
   const [targetCount, setTargetCount] = useState(items.length > 0 ? items.length : 1);
   const [focusNewRow, setFocusNewRow] = useState(false);
   const [columnMode, setColumnMode] = useState<'2col' | '3col'>('3col');
@@ -515,6 +756,13 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   const [showDuplicateProjectDialog, setShowDuplicateProjectDialog] = useState(false);
   const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
 
+  // Folder Dialogs
+  const [showAddFolderDialog, setShowAddFolderDialog] = useState(false);
+  const [showRenameFolderDialog, setShowRenameFolderDialog] = useState(false);
+  const [showDeleteFolderDialog, setShowDeleteFolderDialog] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [parentFolderIdForNewFolder, setParentFolderIdForNewFolder] = useState<string | null>(null);
+
   // Review Session Dialogs
   const [showShareForReviewDialog, setShowShareForReviewDialog] = useState(false);
   const [reviewSessions, setReviewSessions] = useState<ReviewSession[]>([]);
@@ -525,6 +773,13 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   // Desktop Sidebar State
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+
+  // Hide sidebar in review mode
+  useEffect(() => {
+    if (reviewMode?.isReviewMode) {
+      setDesktopSidebarOpen(false);
+    }
+  }, [reviewMode?.isReviewMode]);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -755,7 +1010,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   };
 
   // Direct editing - if item is selected, apply to all selected items
-  const handleInputChange = (id: string, field: 'word' | 'description' | 'note', value: string) => {
+  const handleInputChange = (id: string, field: 'word' | 'description' | 'note' | 'reviewStatus' | 'reviewComment', value: string) => {
     if (isSelectionMode && selectedIds.has(id) && selectedIds.size > 1) {
       // Apply to all selected items
       selectedIds.forEach(selectedId => {
@@ -764,6 +1019,30 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     } else {
       // Apply to single item
       handleUpdateItem(id, field, value);
+    }
+  };
+
+  // Handle review submission
+  const handleSubmitReview = async () => {
+    if (!reviewMode?.isReviewMode || !reviewMode.shareToken) {
+      toast.error('Invalid review session');
+      return;
+    }
+
+    try {
+      const result = await submitReviewResults(reviewMode.shareToken, items);
+      if (result.success) {
+        toast.success('Review submitted successfully!');
+        // Optionally navigate away or show completion message
+        if (onCancel) {
+          setTimeout(() => onCancel(), 1500);
+        }
+      } else {
+        toast.error(result.error || 'Failed to submit review');
+      }
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      toast.error('An error occurred while submitting the review');
     }
   };
 
@@ -832,8 +1111,8 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         const updatedKeywords = itemKeywordsArray.join(' ');
         handleUpdateItem(selectedId, 'keywords', updatedKeywords);
 
-        // Auto-regenerate if in AI mode and keywords changed (only if image already exists)
-        if (item.isolated === false && addedKeywords.length > 0 && item.word && item.imageUrl) {
+        // Auto-regenerate if keywords changed (only if image already exists)
+        if (addedKeywords.length > 0 && item.word && item.imageUrl) {
           setTimeout(() => {
             handleRegenerateItem(selectedId, { keywords: updatedKeywords });
           }, 100);
@@ -843,8 +1122,8 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       const item = items.find(i => i.id === id);
       handleUpdateItem(id, 'keywords', newKeywords);
 
-      // Auto-regenerate if in AI mode and keywords changed (only if image already exists)
-      if (item && item.isolated === false && newKeywords && item.word && newKeywords !== item.keywords && item.imageUrl) {
+      // Auto-regenerate if keywords changed (only if image already exists)
+      if (item && newKeywords && item.word && newKeywords !== item.keywords && item.imageUrl) {
         setTimeout(() => {
           handleRegenerateItem(id, { keywords: newKeywords });
         }, 100);
@@ -906,7 +1185,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
 
   // Mock Generation Logic
-  const handleRegenerateItem = async (id: string, updatedData?: { word?: string, description?: string, keywords?: string }) => {
+  const handleRegenerateItem = async (id: string, updatedData?: { word?: string, description?: string, keywords?: string, isolatedBackground?: boolean }) => {
     const currentItem = items.find(i => i.id === id);
     if (!currentItem) return;
 
@@ -2138,6 +2417,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       </AnimatePresence>
 
       {/* Left: Settings Panel */}
+      {!reviewMode?.isReviewMode && (
       <div className={`flex-shrink-0 h-full transition-all duration-300 ease-in-out
         ${mobileSidebarOpen ? 'fixed top-0 left-0 z-50 translate-x-0 w-[332px]' : 'fixed top-0 left-0 z-50 -translate-x-full w-[332px]'}
         ${desktopSidebarOpen ? 'md:relative md:translate-x-0 md:w-64' : 'md:relative md:translate-x-0 md:w-0 md:overflow-hidden'}`}>
@@ -2316,104 +2596,129 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
                 {/* Project Folder Section */}
                 <div className="space-y-3 mt-10 pt-10 border-t border-slate-200">
-                  <Label className="text-xs font-bold text-slate-400 uppercase">Project Folder</Label>
-
-                  {/* Project Tabs - Browser Style */}
-                  <div className="flex flex-col gap-1">
-                    {projects.map(project => (
-                      <div
-                        key={project.id}
-                        className={`flex items-center gap-1 h-11 md:h-8 px-2 border rounded transition-all ${
-                          project.id === activeProjectId
-                            ? 'bg-white border-slate-300 shadow-sm'
-                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {/* Project Menu */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 w-5 p-0 hover:bg-slate-200 rounded"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <EllipsisVertical className="h-3 w-3 text-slate-400" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="w-40" align="start">
-                            <DropdownMenuItem onClick={() => {
-                              switchActiveProject(project.id);
-                              setShowRenameProjectDialog(true);
-                            }}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => {
-                              switchActiveProject(project.id);
-                              setShowDuplicateProjectDialog(true);
-                            }}>
-                              <Copy className="mr-2 h-4 w-4" />
-                              Duplicate
-                            </DropdownMenuItem>
-                            <DropdownMenuSub>
-                              <DropdownMenuSubTrigger>
-                                <Share2 className="mr-2 h-4 w-4" />
-                                Share
-                              </DropdownMenuSubTrigger>
-                              <DropdownMenuSubContent>
-                                <DropdownMenuItem onClick={() => {
-                                  switchActiveProject(project.id);
-                                  setShowShareForReviewDialog(true);
-                                }}>
-                                  <Link2 className="mr-2 h-4 w-4" />
-                                  Share for Review
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => handleExportProject(project.id, 'excel')}>
-                                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                                  Excel (Links only)
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleExportProject(project.id, 'csv')}>
-                                  <FileText className="mr-2 h-4 w-4" />
-                                  CSV
-                                </DropdownMenuItem>
-                              </DropdownMenuSubContent>
-                            </DropdownMenuSub>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => {
-                              switchActiveProject(project.id);
-                              setShowDeleteProjectDialog(true);
-                            }} className="text-red-600 focus:text-red-600 focus:bg-red-50">
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-
-                        <button
-                          className="flex items-center text-xs font-normal px-1 hover:opacity-80 transition-opacity flex-1"
-                          onClick={() => switchActiveProject(project.id)}
-                        >
-                          <span className={project.id === activeProjectId ? 'text-slate-900 font-medium' : 'text-slate-600'}>
-                            {project.name}
-                          </span>
-                        </button>
-                      </div>
-                    ))}
-
-                    {/* New Project Button */}
-                    {projects.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-400 uppercase">Project Folder</Label>
+                    <div className="flex items-center gap-1">
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        className="h-11 md:h-8 w-full text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                        className="h-6 w-6 p-0"
                         onClick={handleAddNewProject}
                       >
-                        <Plus className="h-3.5 w-3.5 mr-2" />
-                        New Project
+                        <Plus className="h-3.5 w-3.5" />
                       </Button>
-                    )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => {
+                          setParentFolderIdForNewFolder(null);
+                          setShowAddFolderDialog(true);
+                        }}
+                      >
+                        <FolderPlus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Project and Folder Tree */}
+                  <div className="flex flex-col gap-0.5" onClick={(e) => {
+                    // Clear folder selection when clicking on empty area
+                    if (e.target === e.currentTarget) {
+                      setCurrentFolderId(null);
+                    }
+                  }}>
+                    {/* Render root folders */}
+                    {folders.filter(f => !f.parentId).map(folder => (
+                      <FolderTreeItem
+                        key={folder.id}
+                        folder={folder}
+                        allFolders={folders}
+                        projects={projects}
+                        expandedFolders={expandedFolders}
+                        activeProjectId={activeProjectId}
+                        level={0}
+                        currentFolderId={currentFolderId}
+                        onToggleExpand={toggleFolderExpanded}
+                        onRenameFolder={(id) => {
+                          setSelectedFolderId(id);
+                          setShowRenameFolderDialog(true);
+                        }}
+                        onDeleteFolder={(id) => {
+                          setSelectedFolderId(id);
+                          setShowDeleteFolderDialog(true);
+                        }}
+                        onAddSubfolder={(parentId) => {
+                          setParentFolderIdForNewFolder(parentId);
+                          setShowAddFolderDialog(true);
+                        }}
+                        onSwitchProject={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                        }}
+                        onRenameProject={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                          setShowRenameProjectDialog(true);
+                        }}
+                        onDuplicateProject={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                          setShowDuplicateProjectDialog(true);
+                        }}
+                        onDeleteProject={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                          setShowDeleteProjectDialog(true);
+                        }}
+                        onShareProject={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                          setShowShareForReviewDialog(true);
+                        }}
+                        onExportProject={handleExportProject}
+                        onMoveProject={moveProjectToFolder}
+                        onSelectFolder={setCurrentFolderId}
+                      />
+                    ))}
+
+                    {/* Render root-level projects (not in any folder) */}
+                    {projects.filter(p => !p.folderId).map(project => (
+                      <ProjectTreeItem
+                        key={project.id}
+                        project={project}
+                        isActive={project.id === activeProjectId}
+                        level={0}
+                        onSwitch={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                        }}
+                        onRename={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                          setShowRenameProjectDialog(true);
+                        }}
+                        onDuplicate={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                          setShowDuplicateProjectDialog(true);
+                        }}
+                        onDelete={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                          setShowDeleteProjectDialog(true);
+                        }}
+                        onShare={(id) => {
+                          setCurrentFolderId(null);
+                          switchActiveProject(id);
+                          setShowShareForReviewDialog(true);
+                        }}
+                        onExport={handleExportProject}
+                        onMove={moveProjectToFolder}
+                        folders={folders}
+                      />
+                    ))}
+
                   </div>
                 </div>
         </CardContent>
@@ -2468,6 +2773,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       </Card>
         </div>
       </div>
+      )}
 
       {/* Right: List Section */}
       <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
@@ -2476,8 +2782,8 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         <div className="sticky top-0 z-10 bg-slate-50/50 px-4 md:py-6 py-4 flex items-center justify-between gap-2">
               {/* Desktop Controls - Left Side */}
               <div className="hidden md:flex items-center gap-3 ml-[1px]">
-              {/* Desktop Menu Button - Hidden when sidebar is open */}
-              {!desktopSidebarOpen && (
+              {/* Desktop Menu Button - Hidden when sidebar is open or in review mode */}
+              {!desktopSidebarOpen && !reviewMode?.isReviewMode && (
                 <button
                   className="flex items-center justify-center w-8 h-8 hover:bg-slate-100 rounded transition-colors"
                   onClick={() => setDesktopSidebarOpen(true)}
@@ -2492,114 +2798,149 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                 onClick={onCancel}
               >
                 <span className="font-bold text-2xl tracking-tight text-slate-900" style={{ fontFamily: "'Inter', sans-serif" }}>Searchedia</span>
+                {reviewMode?.isReviewMode && (
+                  <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200 text-xs">
+                    Review Mode
+                  </Badge>
+                )}
               </button>
 
               </div>
 
               {/* Right Side - Toolbar Buttons (Desktop only) */}
               <div className="hidden md:flex items-center gap-2">
-                {/* Sort Button */}
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs min-w-[90px]"
-                    onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : 'newest')}
-                >
-                    <ArrowUpDown className="h-3.5 w-3.5 mr-2 text-slate-500" />
-                    {sortBy === 'newest' ? 'Newest' : 'Oldest'}
-                </Button>
-
-                {/* Selection Button */}
-                {isSelectionMode ? (
-                    <>
-                      <Button variant="ghost" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
-                          Cancel
-                      </Button>
-                      {selectedIds.size > 0 && (
-                          <>
-                            <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-slate-200 h-8 px-3">
-                              {selectedIds.size} selected - Edit any to apply to all
-                            </Badge>
-                            <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-8 text-xs">
-                              <Trash2 className="h-3.5 w-3.5 mr-2" />
-                              Delete ({selectedIds.size})
-                            </Button>
-                          </>
-                      )}
-                    </>
+                {reviewMode?.isReviewMode ? (
+                  /* Review Mode Toolbar */
+                  <Button
+                    onClick={handleSubmitReview}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs"
+                  >
+                    <Check className="h-3.5 w-3.5 mr-2" />
+                    Submit Review
+                  </Button>
                 ) : (
-                    <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
-                        <CheckSquare className="mr-2 h-3.5 w-3.5 text-slate-500" /> Select
+                  /* Normal Mode Toolbar */
+                  <>
+                    {/* Sort Button */}
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs min-w-[90px]"
+                        onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                    >
+                        <ArrowUpDown className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                        {sortBy === 'newest' ? 'Newest' : 'Oldest'}
                     </Button>
+
+                    {/* Selection Button */}
+                    {isSelectionMode ? (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
+                              Cancel
+                          </Button>
+                          {selectedIds.size > 0 && (
+                              <>
+                                <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-slate-200 h-8 px-3">
+                                  {selectedIds.size} selected - Edit any to apply to all
+                                </Badge>
+                                <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-8 text-xs">
+                                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                  Delete ({selectedIds.size})
+                                </Button>
+                              </>
+                          )}
+                        </>
+                    ) : (
+                        <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
+                            <CheckSquare className="mr-2 h-3.5 w-3.5 text-slate-500" /> Select
+                        </Button>
+                    )}
+
+                    {/* Add Row Button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
+                      className="h-8 text-xs"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                      Add
+                    </Button>
+
+                    {/* Search items button */}
+                    <Button
+                       onClick={handleExtractImages}
+                       className="bg-slate-800 hover:bg-slate-900 text-white h-8 text-xs"
+                       disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
+                    >
+                       {(() => {
+                         const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
+                         return count > 0 ? `Search ${count} items` : 'Search items';
+                       })()}
+                    </Button>
+                  </>
                 )}
-
-                {/* Add Row Button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
-                  className="h-8 text-xs"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-2 text-slate-500" />
-                  Add
-                </Button>
-
-                {/* Search items button */}
-                <Button
-                   onClick={handleExtractImages}
-                   className="bg-slate-800 hover:bg-slate-900 text-white h-8 text-xs"
-                   disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
-                >
-                   {(() => {
-                     const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
-                     return count > 0 ? `Search ${count} items` : 'Search items';
-                   })()}
-                </Button>
               </div>
 
               {/* Mobile Toolbar Buttons - Left */}
               <div className="md:hidden flex items-center gap-2">
-                {/* Sort Button */}
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs min-w-[80px]"
-                    onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : 'newest')}
-                >
-                    <ArrowUpDown className="h-3.5 w-3.5 mr-1 text-slate-500" />
-                    {sortBy === 'newest' ? 'Newest' : 'Oldest'}
-                </Button>
-
-                {/* Selection Button */}
-                {isSelectionMode ? (
-                    <Button variant="ghost" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
-                        Cancel
-                    </Button>
+                {reviewMode?.isReviewMode ? (
+                  /* Review Mode Mobile Toolbar */
+                  <Button
+                    onClick={handleSubmitReview}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs"
+                  >
+                    <Check className="h-3.5 w-3.5 mr-1" />
+                    Submit
+                  </Button>
                 ) : (
-                    <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
-                        <CheckSquare className="mr-1 h-3.5 w-3.5 text-slate-500" /> Select
+                  /* Normal Mode Mobile Toolbar */
+                  <>
+                    {/* Sort Button */}
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs min-w-[80px]"
+                        onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                    >
+                        <ArrowUpDown className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                        {sortBy === 'newest' ? 'Newest' : 'Oldest'}
                     </Button>
-                )}
 
-                {/* Add Row Button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
-                  className="h-8 text-xs"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1 text-slate-500" />
-                  Add
-                </Button>
+                    {/* Selection Button */}
+                    {isSelectionMode ? (
+                        <Button variant="ghost" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
+                            Cancel
+                        </Button>
+                    ) : (
+                        <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
+                            <CheckSquare className="mr-1 h-3.5 w-3.5 text-slate-500" /> Select
+                        </Button>
+                    )}
+
+                    {/* Add Row Button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
+                      className="h-8 text-xs"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                      Add
+                    </Button>
+                  </>
+                )}
               </div>
 
               {/* Mobile Hamburger Menu - Right */}
-              <button
-                className="md:hidden flex items-center justify-center w-8 h-8 hover:bg-slate-100 rounded transition-colors ml-auto"
-                onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-              >
-                <Menu className="h-6 w-6 text-slate-500" />
-              </button>
+              {!reviewMode?.isReviewMode && (
+                <button
+                  className="md:hidden flex items-center justify-center w-8 h-8 hover:bg-slate-100 rounded transition-colors ml-auto"
+                  onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+                >
+                  <Menu className="h-6 w-6 text-slate-500" />
+                </button>
+              )}
         </div>
 
         {/* Mobile Card View */}
@@ -2881,6 +3222,9 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                  {columnMode === '3col' && <TableHead className={`w-[580px] font-bold text-slate-500 ${desktopSidebarOpen ? 'translate-x-8' : 'translate-x-5'}`}>Description</TableHead>}
                  <TableHead className="w-[40px] p-0"></TableHead>
                  <TableHead className={`font-bold text-slate-500 ${desktopSidebarOpen ? 'w-[120px]' : 'w-[150px]'}`}>Note</TableHead>
+                 {reviewMode?.isReviewMode && (
+                   <TableHead className="font-bold text-slate-500 w-[280px]">Review</TableHead>
+                 )}
               </TableRow>
            </TableHeader>
            <TableBody>
@@ -3115,62 +3459,144 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     </>
                     )}
                     <TableCell className={`font-semibold text-slate-900 align-top pt-4 ${desktopSidebarOpen ? 'w-[120px] translate-x-8' : 'w-[180px]'}`}>
-                       <Input
-                         placeholder="Enter subject..."
-                         autoFocus={(focusNewRow && item.createdAt === maxCreatedAt) || (items.length === 1 && !item.word && idx === 0)}
-                         value={item.word}
-                         onChange={(e) => handleInputChange(item.id, 'word', e.target.value)}
-                         className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 h-8 font-semibold -ml-2 w-full placeholder:font-normal placeholder:text-slate-300"
-                       />
+                       {reviewMode?.isReviewMode ? (
+                         <div className="px-2 py-2 text-sm font-semibold text-slate-900">
+                           {item.word || <span className="text-slate-400 font-normal">No subject</span>}
+                         </div>
+                       ) : (
+                         <Input
+                           placeholder="Enter subject..."
+                           autoFocus={(focusNewRow && item.createdAt === maxCreatedAt) || (items.length === 1 && !item.word && idx === 0)}
+                           value={item.word}
+                           onChange={(e) => handleInputChange(item.id, 'word', e.target.value)}
+                           className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 h-8 font-semibold -ml-2 w-full placeholder:font-normal placeholder:text-slate-300"
+                         />
+                       )}
                     </TableCell>
                     {columnMode === '3col' && (
                        <TableCell className={`text-slate-600 align-top pt-4 w-[580px] max-w-[580px] ${desktopSidebarOpen ? 'translate-x-8' : 'translate-x-5'}`}>
-                          <div className="space-y-2 -ml-2">
-                            <div className="relative">
-                              <Textarea
-                                placeholder="Add details for better results..."
-                                value={item.description}
-                                onChange={(e) => handleInputChange(item.id, 'description', e.target.value)}
-                                className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 py-1.5 min-h-[32px] h-auto leading-tight text-slate-500 w-full resize-none overflow-hidden placeholder:text-slate-300"
-                                rows={1}
-                                style={{ height: 'auto' }}
-                                onInput={(e) => {
-                                  const target = e.target as HTMLTextAreaElement;
-                                  target.style.height = 'auto';
-                                  target.style.height = target.scrollHeight + 'px';
-                                }}
+                          {reviewMode?.isReviewMode ? (
+                            <div className="px-2 py-2">
+                              <p className="text-sm text-slate-600 whitespace-pre-wrap">
+                                {item.description || <span className="text-slate-400">No description</span>}
+                              </p>
+                              {item.keywords && (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {item.keywords.split(' ').filter(k => k.trim()).map((keyword, kidx) => (
+                                    <Badge key={kidx} variant="secondary" className="text-xs bg-slate-100 text-slate-600">
+                                      {keyword}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-2 -ml-2">
+                              <div className="relative">
+                                <Textarea
+                                  placeholder="Add details for better results..."
+                                  value={item.description}
+                                  onChange={(e) => handleInputChange(item.id, 'description', e.target.value)}
+                                  className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 py-1.5 min-h-[32px] h-auto leading-tight text-slate-500 w-full resize-none overflow-hidden placeholder:text-slate-300"
+                                  rows={1}
+                                  style={{ height: 'auto' }}
+                                  onInput={(e) => {
+                                    const target = e.target as HTMLTextAreaElement;
+                                    target.style.height = 'auto';
+                                    target.style.height = target.scrollHeight + 'px';
+                                  }}
+                                />
+                              </div>
+                              <div className="mt-1">
+                              <KeywordPreview
+                                text={item.description}
+                                word={item.word}
+                                existingKeywords={item.keywords}
+                                enableAI={item.isolated === false}
+                                isolatedBackground={item.isolatedBackground}
+                                onAddKeyword={(keyword) => handleAddKeywordToItem(item.id, keyword)}
+                                onAddAllKeywords={(keywords) => handleAddAllKeywordsToItem(item.id, keywords)}
+                                onKeywordsGenerated={(keywords) => handleKeywordsChange(item.id, keywords)}
+                                onRegenerateImage={item.imageUrl ? () => {
+                                  // Use the current item's keywords directly from render
+                                  handleRegenerateItem(item.id, { keywords: item.keywords });
+                                } : undefined}
+                                onIsolatedBackgroundChange={(value) => handleIsolatedBgChange(item.id, value)}
+                                onModeChange={(enabled) => handleModeChange(item.id, enabled)}
                               />
+                              </div>
                             </div>
-                            <div className="mt-1">
-                            <KeywordPreview
-                              text={item.description}
-                              word={item.word}
-                              existingKeywords={item.keywords}
-                              enableAI={item.isolated === false}
-                              isolatedBackground={item.isolatedBackground}
-                              onAddKeyword={(keyword) => handleAddKeywordToItem(item.id, keyword)}
-                              onAddAllKeywords={(keywords) => handleAddAllKeywordsToItem(item.id, keywords)}
-                              onKeywordsGenerated={(keywords) => handleKeywordsChange(item.id, keywords)}
-                              onRegenerateImage={item.imageUrl ? () => {
-                                // Use the current item's keywords directly from render
-                                handleRegenerateItem(item.id, { keywords: item.keywords });
-                              } : undefined}
-                              onIsolatedBackgroundChange={(value) => handleIsolatedBgChange(item.id, value)}
-                              onModeChange={(enabled) => handleModeChange(item.id, enabled)}
-                            />
-                            </div>
-                          </div>
+                          )}
                        </TableCell>
                     )}
                     <TableCell className="w-[40px] p-0"></TableCell>
                     <TableCell className={`text-slate-600 align-top pt-4 ${desktopSidebarOpen ? 'w-[120px]' : 'w-[150px]'}`}>
-                        <Input
-                            placeholder="Memo..."
-                            value={item.note}
-                            onChange={(e) => handleInputChange(item.id, 'note', e.target.value)}
-                            className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 h-8 text-slate-500 text-sm -ml-2 w-full placeholder:text-slate-300"
-                        />
+                        {reviewMode?.isReviewMode ? (
+                          <div className="px-2 py-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-md">
+                            {item.note || <span className="text-slate-400">No memo</span>}
+                          </div>
+                        ) : (
+                          <Input
+                              placeholder="Memo..."
+                              value={item.note}
+                              onChange={(e) => handleInputChange(item.id, 'note', e.target.value)}
+                              className="bg-slate-50 md:bg-white border border-slate-400 md:border-white focus:bg-slate-50 md:focus:bg-white focus:border-slate-400 md:focus:border-slate-400 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all px-2 h-8 text-slate-500 text-sm -ml-2 w-full placeholder:text-slate-300"
+                          />
+                        )}
                     </TableCell>
+                    {reviewMode?.isReviewMode && (
+                      <TableCell className="align-top pt-4 w-[280px]">
+                        <div className="space-y-2">
+                          <div className="flex gap-1.5">
+                            <Button
+                              size="sm"
+                              variant={item.reviewStatus === 'approved' ? 'default' : 'outline'}
+                              className={`h-7 text-xs flex-1 ${
+                                item.reviewStatus === 'approved'
+                                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                                  : 'hover:bg-green-50 hover:border-green-600 hover:text-green-700'
+                              }`}
+                              onClick={() => handleInputChange(item.id, 'reviewStatus', 'approved')}
+                            >
+                              <Check className="h-3 w-3 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={item.reviewStatus === 'rejected' ? 'default' : 'outline'}
+                              className={`h-7 text-xs flex-1 ${
+                                item.reviewStatus === 'rejected'
+                                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                                  : 'hover:bg-red-50 hover:border-red-600 hover:text-red-700'
+                              }`}
+                              onClick={() => handleInputChange(item.id, 'reviewStatus', 'rejected')}
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              Reject
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={item.reviewStatus === 'pending' ? 'default' : 'outline'}
+                              className={`h-7 text-xs flex-1 ${
+                                item.reviewStatus === 'pending'
+                                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                  : 'hover:bg-amber-50 hover:border-amber-600 hover:text-amber-700'
+                              }`}
+                              onClick={() => handleInputChange(item.id, 'reviewStatus', 'pending')}
+                            >
+                              Pending
+                            </Button>
+                          </div>
+                          <Textarea
+                            placeholder="Add review comment..."
+                            value={item.reviewComment || ''}
+                            onChange={(e) => handleInputChange(item.id, 'reviewComment', e.target.value)}
+                            className="text-xs min-h-[60px] resize-none"
+                            rows={2}
+                          />
+                        </div>
+                      </TableCell>
+                    )}
                  </TableRow>
               ))}
            </TableBody>
@@ -3451,6 +3877,49 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
             await deleteProject(activeProject.id);
           }
           setShowDeleteProjectDialog(false);
+        }}
+      />
+
+      {/* Folder Dialogs */}
+      <ProjectNameDialog
+        open={showAddFolderDialog}
+        onOpenChange={setShowAddFolderDialog}
+        title="Create New Folder"
+        description="Enter a name for your new folder."
+        confirmText="Create"
+        onConfirm={(name) => {
+          addFolder(name, parentFolderIdForNewFolder);
+          setShowAddFolderDialog(false);
+          setParentFolderIdForNewFolder(null);
+        }}
+      />
+
+      <ProjectNameDialog
+        open={showRenameFolderDialog}
+        onOpenChange={setShowRenameFolderDialog}
+        title="Rename Folder"
+        description={`Enter the new name for folder "${folders.find(f => f.id === selectedFolderId)?.name}"`}
+        initialName={folders.find(f => f.id === selectedFolderId)?.name}
+        confirmText="Rename"
+        onConfirm={(name) => {
+          if (selectedFolderId) {
+            renameFolder(selectedFolderId, name);
+          }
+          setShowRenameFolderDialog(false);
+          setSelectedFolderId(null);
+        }}
+      />
+
+      <ConfirmDeleteProjectDialog
+        open={showDeleteFolderDialog}
+        onOpenChange={setShowDeleteFolderDialog}
+        projectName={folders.find(f => f.id === selectedFolderId)?.name || 'Selected Folder'}
+        onConfirm={async () => {
+          if (selectedFolderId) {
+            deleteFolder(selectedFolderId);
+          }
+          setShowDeleteFolderDialog(false);
+          setSelectedFolderId(null);
         }}
       />
 

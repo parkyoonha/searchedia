@@ -153,11 +153,11 @@ export function ReviewPage() {
     }
   };
 
-  const handleBulkApprove = () => {
+  const handleBulkStatusChange = (status: 'approved' | 'rejected' | 'pending') => {
     if (!session || selectedIds.size === 0) return;
 
     const updatedItems = session.items.map(item =>
-      selectedIds.has(item.id) ? { ...item, reviewStatus: 'approved' as const } : item
+      selectedIds.has(item.id) ? { ...item, reviewStatus: status } : item
     );
 
     const updatedSession = { ...session, items: updatedItems };
@@ -170,28 +170,8 @@ export function ReviewPage() {
     );
     localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
 
-    toast.success(`${selectedIds.size} items approved`);
-    setSelectedIds(new Set());
-  };
-
-  const handleBulkReject = () => {
-    if (!session || selectedIds.size === 0) return;
-
-    const updatedItems = session.items.map(item =>
-      selectedIds.has(item.id) ? { ...item, reviewStatus: 'rejected' as const } : item
-    );
-
-    const updatedSession = { ...session, items: updatedItems };
-    setSession(updatedSession);
-
-    // Update in localStorage
-    const sessions = JSON.parse(localStorage.getItem('reviewSessions') || '[]');
-    const updatedSessions = sessions.map((s: ReviewSession) =>
-      s.shareToken === token ? updatedSession : s
-    );
-    localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
-
-    toast.success(`${selectedIds.size} items rejected`);
+    const statusText = status === 'approved' ? 'approved' : status === 'rejected' ? 'rejected' : 'set to pending';
+    toast.success(`${selectedIds.size} items ${statusText}`);
     setSelectedIds(new Set());
   };
 
@@ -379,7 +359,7 @@ export function ReviewPage() {
                     size="sm"
                     variant="outline"
                     className="border-green-200 hover:bg-green-50"
-                    onClick={handleBulkApprove}
+                    onClick={() => handleBulkStatusChange('approved')}
                   >
                     <Check className="h-4 w-4 mr-1.5" />
                     Approve All
@@ -388,10 +368,19 @@ export function ReviewPage() {
                     size="sm"
                     variant="outline"
                     className="border-red-200 hover:bg-red-50"
-                    onClick={handleBulkReject}
+                    onClick={() => handleBulkStatusChange('rejected')}
                   >
                     <X className="h-4 w-4 mr-1.5" />
                     Reject All
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-slate-200 hover:bg-slate-50"
+                    onClick={() => handleBulkStatusChange('pending')}
+                  >
+                    <AlertCircle className="h-4 w-4 mr-1.5" />
+                    Set Pending
                   </Button>
                   <Button
                     size="sm"
@@ -529,7 +518,9 @@ export function ReviewPage() {
                     {/* Note Column */}
                     <div className="col-span-2 flex items-start pt-1">
                       {item.note && (
-                        <p className="text-sm text-slate-600">{item.note}</p>
+                        <div className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md">
+                          <p className="text-sm text-slate-700">{item.note}</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -570,9 +561,20 @@ export function ReviewPage() {
                         <X className="h-4 w-4 mr-1.5" />
                         Reject
                       </Button>
+                      <Button
+                        size="sm"
+                        variant={item.reviewStatus === 'pending' ? 'default' : 'outline'}
+                        className={item.reviewStatus === 'pending' ? 'bg-slate-600 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-50 hover:border-slate-300'}
+                        onClick={() => handleUpdateReviewStatus(item.id, 'pending')}
+                      >
+                        <AlertCircle className="h-4 w-4 mr-1.5" />
+                        Pending
+                      </Button>
                       {item.reviewStatus && (
                         <span className="text-xs text-slate-500 ml-2">
-                          {item.reviewStatus === 'approved' ? '✓ Approved' : '✗ Rejected'}
+                          {item.reviewStatus === 'approved' ? '✓ Approved' :
+                           item.reviewStatus === 'rejected' ? '✗ Rejected' :
+                           '⏸ Pending'}
                         </span>
                       )}
                     </div>

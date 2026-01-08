@@ -192,6 +192,12 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
       // AI is disabled, switch to manual mode
       setMode('manual');
 
+      // Don't overwrite keywords if isolated background is active
+      if (isolatedBackground) {
+        console.log('[KeywordPreview] AI disabled but isolated background is active, preserving keywords');
+        return;
+      }
+
       if (text || word) {
         // Use manual extraction
         const manualKeywords = extractedKeywords.join(' ');
@@ -226,7 +232,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
         });
       }
     }
-  }, [enableAI, text, word, hasAI]);
+  }, [enableAI, text, word, hasAI, isolatedBackground]);
 
   // Auto-optimize when text changes (debounced)
   useEffect(() => {
@@ -529,7 +535,11 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
 
                   // Then set keywords to "word isolated background"
                   const isolatedKeywords = `${word} isolated background`;
+                  console.log('[KeywordPreview] Setting isolated keywords:', isolatedKeywords);
+                  setAiOptimized(isolatedKeywords);
+                  setEditedQuery(isolatedKeywords);
                   onKeywordsGenerated?.(isolatedKeywords);
+                  console.log('[KeywordPreview] Called onKeywordsGenerated with:', isolatedKeywords);
                 } else {
                   // When disabling, restore saved keywords (prefer saved, fallback to manual extraction)
                   const restoreKeywords = savedKeywordsBeforeIsolatedBg && savedKeywordsBeforeIsolatedBg.trim()
