@@ -436,12 +436,14 @@ export function ReviewPage() {
                                 controls
                                 loop
                                 muted
+                                preload="none"
                               />
                             ) : (
                               <img
                                 src={item.imageUrl}
                                 alt={item.word}
                                 className="w-full h-full object-cover"
+                                loading="lazy"
                               />
                             )}
 
