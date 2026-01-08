@@ -215,159 +215,101 @@ export default function App() {
 
   // Supabase auth state listener
   useEffect(() => {
-    let isInitialLoad = true;
+    let hasLoadedData = false;
 
-    // Check current session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      console.log('[App] getSession called, session exists:', !!session);
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
-          email: session.user.email || '',
-          plan: 'pro', // Default to pro for logged in users
-          avatar_url: session.user.user_metadata?.picture
-        });
-
-        // Load projects and folders from DB when logged in
-        console.log('[App] Loading projects from DB...');
-        const dbProjects = await loadProjectsFromDB();
-        console.log('[App] Loaded projects from DB:', dbProjects.length, dbProjects);
-
-        console.log('[App] Loading folders from DB...');
-        const dbFolders = await loadFoldersFromDB();
-        console.log('[App] Loaded folders from DB:', dbFolders.length, dbFolders);
-
-        if (dbProjects.length > 0) {
-          setProjects(dbProjects);
-          setActiveProjectId(dbProjects[0].id);
-          // If viewMode is still 'landing' and we have projects, switch to bulk
-          const savedViewMode = localStorage.getItem('geminiViewMode');
-          if (savedViewMode === 'bulk') {
-            setViewMode('bulk');
-          }
-          toast.success(`Loaded ${dbProjects.length} projects from cloud`);
-        } else {
-          // If no DB projects, sync localStorage projects to DB
-          const localProjects = localStorage.getItem('geminiProjects');
-          console.log('[App] No DB projects, checking localStorage:', !!localProjects);
-          if (localProjects) {
-            const parsed = JSON.parse(localProjects);
-            if (parsed.length > 0) {
-              console.log('[App] Syncing localStorage projects to DB:', parsed.length);
-              await syncProjectsToDB(parsed, session.user.id);
-              setProjects(parsed);
-              setActiveProjectId(parsed[0].id);
-              // If viewMode is still 'landing' and we have projects, switch to bulk
-              const savedViewMode = localStorage.getItem('geminiViewMode');
-              if (savedViewMode === 'bulk') {
-                setViewMode('bulk');
-              }
-              toast.success('Synced local projects to cloud');
-            }
-          }
-        }
-
-        if (dbFolders.length > 0) {
-          setFolders(dbFolders);
-        } else {
-          // If no DB folders, sync localStorage folders to DB
-          const localFolders = localStorage.getItem('geminiFolders');
-          if (localFolders) {
-            const parsed = JSON.parse(localFolders);
-            if (parsed.length > 0) {
-              console.log('[App] Syncing localStorage folders to DB:', parsed.length);
-              await syncFoldersToDB(parsed, session.user.id);
-              setFolders(parsed);
-            }
-          }
-        }
-      }
-      isInitialLoad = false;
-      setIsInitialLoadComplete(true);
-      console.log('[App] Initial load complete');
-    });
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('[App] onAuthStateChange event:', _event, 'isInitialLoad:', isInitialLoad);
-
-      // Skip if this is the initial SIGNED_IN event (already handled by getSession above)
-      if (isInitialLoad && _event === 'INITIAL_SESSION') {
-        console.log('[App] Skipping INITIAL_SESSION event');
+    const loadUserData = async (session: any) => {
+      if (hasLoadedData) {
+        console.log('[App] Data already loaded, skipping');
         return;
       }
 
-      if (session?.user) {
-        // User logged in (new login, not initial session)
-        console.log('[App] Auth state change - user signed in');
-        const loggedInUser = {
-          id: session.user.id,
-          name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
-          email: session.user.email || '',
-          plan: 'pro' as 'pro',
-          avatar_url: session.user.user_metadata?.picture
-        };
-        setUser(loggedInUser);
-        setShowLogin(false);
+      console.log('[App] Loading user data...');
+      hasLoadedData = true;
 
-        // Only load projects and folders if this is not the initial load
-        if (!isInitialLoad) {
-          console.log('[App] Loading projects from cloud (auth state change)...');
-          const dbProjects = await loadProjectsFromDB();
-          console.log('[App] Loaded projects:', dbProjects.length);
+      setUser({
+        id: session.user.id,
+        name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+        email: session.user.email || '',
+        plan: 'pro',
+        avatar_url: session.user.user_metadata?.picture
+      });
 
-          console.log('[App] Loading folders from cloud (auth state change)...');
-          const dbFolders = await loadFoldersFromDB();
-          console.log('[App] Loaded folders:', dbFolders.length);
+      // Load projects and folders from DB
+      console.log('[App] Loading projects from DB...');
+      const dbProjects = await loadProjectsFromDB();
+      console.log('[App] Loaded projects from DB:', dbProjects.length);
 
-          if (dbProjects.length > 0) {
-            setProjects(dbProjects);
-            setActiveProjectId(dbProjects[0].id);
-            toast.success(`Loaded ${dbProjects.length} projects from your account.`);
-          } else {
-            // If no DB projects, sync localStorage projects to DB
-            const localProjects = localStorage.getItem('geminiProjects');
-            if (localProjects) {
-              const parsed = JSON.parse(localProjects);
-              if (parsed.length > 0) {
-                await syncProjectsToDB(parsed, session.user.id);
-                setProjects(parsed);
-                setActiveProjectId(parsed[0].id);
-                toast.success('Synced local projects to cloud');
-              }
+      console.log('[App] Loading folders from DB...');
+      const dbFolders = await loadFoldersFromDB();
+      console.log('[App] Loaded folders from DB:', dbFolders.length);
+
+      if (dbProjects.length > 0) {
+        setProjects(dbProjects);
+        setActiveProjectId(dbProjects[0].id);
+        const savedViewMode = localStorage.getItem('geminiViewMode');
+        if (savedViewMode === 'bulk') {
+          setViewMode('bulk');
+        }
+        toast.success(`Loaded ${dbProjects.length} projects from cloud`);
+      } else {
+        // If no DB projects, sync localStorage projects to DB
+        const localProjects = localStorage.getItem('geminiProjects');
+        if (localProjects) {
+          const parsed = JSON.parse(localProjects);
+          if (parsed.length > 0) {
+            console.log('[App] Syncing localStorage projects to DB:', parsed.length);
+            await syncProjectsToDB(parsed, session.user.id);
+            setProjects(parsed);
+            setActiveProjectId(parsed[0].id);
+            const savedViewMode = localStorage.getItem('geminiViewMode');
+            if (savedViewMode === 'bulk') {
+              setViewMode('bulk');
             }
-          }
-
-          if (dbFolders.length > 0) {
-            setFolders(dbFolders);
-          } else {
-            // If no DB folders, sync localStorage folders to DB
-            const localFolders = localStorage.getItem('geminiFolders');
-            if (localFolders) {
-              const parsed = JSON.parse(localFolders);
-              if (parsed.length > 0) {
-                await syncFoldersToDB(parsed, session.user.id);
-                setFolders(parsed);
-              }
-            }
+            toast.success('Synced local projects to cloud');
           }
         }
+      }
 
+      if (dbFolders.length > 0) {
+        setFolders(dbFolders);
+      } else {
+        // If no DB folders, sync localStorage folders to DB
+        const localFolders = localStorage.getItem('geminiFolders');
+        if (localFolders) {
+          const parsed = JSON.parse(localFolders);
+          if (parsed.length > 0) {
+            console.log('[App] Syncing localStorage folders to DB:', parsed.length);
+            await syncFoldersToDB(parsed, session.user.id);
+            setFolders(parsed);
+          }
+        }
+      }
+
+      setIsInitialLoadComplete(true);
+      setShowLogin(false);
+    };
+
+    // Listen for auth changes (this handles both initial session and new logins)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log('[App] onAuthStateChange event:', _event);
+
+      if (session?.user) {
+        console.log('[App] User authenticated');
+        await loadUserData(session);
       } else {
         // User logged out
-        console.log('[App] Auth state change - user signed out');
+        console.log('[App] User signed out');
         setUser(null);
-        // On logout, we could decide to keep local projects or clear them.
-        // For now, we clear them to ensure a clean state for the next user.
         setProjects([]);
         setActiveProjectId(null);
         setFolders([]);
         setExpandedFolders(new Set());
         setCurrentFolderId(null);
         setViewMode('landing');
+        hasLoadedData = false;
+        setIsInitialLoadComplete(true);
       }
     });
 
