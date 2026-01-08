@@ -47,49 +47,68 @@ export function ReviewPage() {
   }, []);
 
   useEffect(() => {
-    if (!token) {
-      setError('Invalid review link');
+    try {
+      console.log('[ReviewPage] Loading session with token:', token);
+
+      if (!token) {
+        console.log('[ReviewPage] No token provided');
+        setError('Invalid review link');
+        setLoading(false);
+        return;
+      }
+
+      // Load review session from localStorage
+      const sessionsStr = localStorage.getItem('reviewSessions');
+      console.log('[ReviewPage] localStorage reviewSessions:', sessionsStr);
+
+      const sessions = JSON.parse(sessionsStr || '[]');
+      console.log('[ReviewPage] Parsed sessions:', sessions.length);
+
+      const foundSession = sessions.find((s: ReviewSession) => s.shareToken === token);
+      console.log('[ReviewPage] Found session:', !!foundSession);
+
+      if (!foundSession) {
+        console.log('[ReviewPage] Session not found for token:', token);
+        setError('Review session not found');
+        setLoading(false);
+        return;
+      }
+
+      // Check expiration
+      const now = Date.now();
+      if (now > foundSession.expiresAt) {
+        console.log('[ReviewPage] Session expired');
+        setError('This review link has expired');
+        setLoading(false);
+        return;
+      }
+
+      // Check view count
+      if (foundSession.viewCount >= foundSession.maxViews) {
+        console.log('[ReviewPage] Max views reached');
+        setError('This review link has reached its maximum view limit');
+        setLoading(false);
+        return;
+      }
+
+      // Increment view count
+      foundSession.viewCount += 1;
+      foundSession.status = 'in-review';
+
+      // Save updated session
+      const updatedSessions = sessions.map((s: ReviewSession) =>
+        s.shareToken === token ? foundSession : s
+      );
+      localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
+
+      console.log('[ReviewPage] Session loaded successfully');
+      setSession(foundSession);
       setLoading(false);
-      return;
-    }
-
-    // Load review session from localStorage
-    const sessions = JSON.parse(localStorage.getItem('reviewSessions') || '[]');
-    const foundSession = sessions.find((s: ReviewSession) => s.shareToken === token);
-
-    if (!foundSession) {
-      setError('Review session not found');
+    } catch (err) {
+      console.error('[ReviewPage] Error loading session:', err);
+      setError('Failed to load review session');
       setLoading(false);
-      return;
     }
-
-    // Check expiration
-    const now = Date.now();
-    if (now > foundSession.expiresAt) {
-      setError('This review link has expired');
-      setLoading(false);
-      return;
-    }
-
-    // Check view count
-    if (foundSession.viewCount >= foundSession.maxViews) {
-      setError('This review link has reached its maximum view limit');
-      setLoading(false);
-      return;
-    }
-
-    // Increment view count
-    foundSession.viewCount += 1;
-    foundSession.status = 'in-review';
-
-    // Save updated session
-    const updatedSessions = sessions.map((s: ReviewSession) =>
-      s.shareToken === token ? foundSession : s
-    );
-    localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
-
-    setSession(foundSession);
-    setLoading(false);
   }, [token]);
 
   const handleUpdateReviewStatus = (itemId: string, status: 'approved' | 'rejected') => {
