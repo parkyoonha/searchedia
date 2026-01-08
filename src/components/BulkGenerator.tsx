@@ -96,7 +96,7 @@ import { KeywordPreview } from './KeywordPreview';
 import { optimizeKeywordsWithAI } from '../services/ai';
 import { ProjectNameDialog } from './project/ProjectNameDialog';
 import { ConfirmDeleteProjectDialog } from './project/ConfirmDeleteProjectDialog';
-import { submitReviewResults } from '../lib/reviewDatabase';
+import { submitReviewResults, createReviewSession } from '../lib/reviewDatabase';
 
 // Generate stock site search URL based on source and keywords
 function generateStockSiteSearchUrl(source: string, keywords: string, mediaType: 'image' | 'video' = 'image'): string {
@@ -304,12 +304,15 @@ function ShareForReviewDialog({ open, onOpenChange, reviewLink, onCreateSession 
   const [expirationHours, setExpirationHours] = useState('24');
   const [maxViews, setMaxViews] = useState('10');
   const [linkGenerated, setLinkGenerated] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
+    setIsGenerating(true);
     const hours = parseInt(expirationHours) || 24;
     const views = parseInt(maxViews) || 10;
-    onCreateSession(hours, views);
+    await onCreateSession(hours, views);
     setLinkGenerated(true);
+    setIsGenerating(false);
   };
 
   const handleCopyLink = () => {
@@ -322,6 +325,7 @@ function ShareForReviewDialog({ open, onOpenChange, reviewLink, onCreateSession 
       setLinkGenerated(false);
       setExpirationHours('24');
       setMaxViews('10');
+      setIsGenerating(false);
     }
   }, [open]);
 
@@ -423,12 +427,21 @@ function ShareForReviewDialog({ open, onOpenChange, reviewLink, onCreateSession 
         <div className="flex justify-end gap-2">
           {!linkGenerated ? (
             <>
-              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isGenerating}>
                 Cancel
               </Button>
-              <Button onClick={handleGenerate}>
-                <Link2 className="h-4 w-4 mr-2" />
-                Generate Link
+              <Button onClick={handleGenerate} disabled={isGenerating}>
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="h-4 w-4 mr-2" />
+                    Generate Link
+                  </>
+                )}
               </Button>
             </>
           ) : (
@@ -765,7 +778,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   // Review Session Dialogs
   const [showShareForReviewDialog, setShowShareForReviewDialog] = useState(false);
-  const [reviewSessions, setReviewSessions] = useState<ReviewSession[]>([]);
   const [currentReviewLink, setCurrentReviewLink] = useState<string>('');
 
   // Mobile Sidebar State
@@ -867,30 +879,25 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   };
 
   // Handle creating review session
-  const handleCreateReviewSession = (expirationHours: number, maxViews: number) => {
+  const handleCreateReviewSession = async (expirationHours: number, maxViews: number) => {
     const token = generateShareToken();
-    const now = Date.now();
-    const expiresAt = now + (expirationHours * 60 * 60 * 1000);
 
-    const session: ReviewSession = {
-      id: Date.now().toString(),
-      shareToken: token,
-      createdAt: now,
-      expiresAt,
-      status: 'pending',
-      items: items.map(item => ({
+    // Create review session in Supabase
+    const result = await createReviewSession(
+      items.map(item => ({
         ...item,
         reviewStatus: 'pending'
       })),
-      viewCount: 0,
-      maxViews
-    };
+      token,
+      expirationHours,
+      maxViews,
+      activeProjectId || undefined
+    );
 
-    setReviewSessions(prev => [...prev, session]);
-
-    // Save to localStorage
-    const existingSessions = JSON.parse(localStorage.getItem('reviewSessions') || '[]');
-    localStorage.setItem('reviewSessions', JSON.stringify([...existingSessions, session]));
+    if (!result.success) {
+      toast.error(result.error || 'Failed to create review session');
+      return;
+    }
 
     // Generate review link
     const reviewLink = `${window.location.origin}/review/${token}`;
