@@ -732,11 +732,23 @@ function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDupli
 }
 
 export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel, userPlan, credits, onUpgrade, onConsumeCredits, initialBaseKeywords, projects, activeProjectId, addProject, renameProject, duplicateProject, deleteProject, switchActiveProject, folders, expandedFolders, addFolder, renameFolder, deleteFolder, moveProjectToFolder, toggleFolderExpanded, currentFolderId, setCurrentFolderId, user, onShowLogin, onLogout, reviewMode }: BulkGeneratorProps) {
-  const [targetCount, setTargetCount] = useState(items.length > 0 ? items.length : 1);
+  // Separate target counts for each media type
+  const [targetCountByType, setTargetCountByType] = useState<{ image: number; video: number }>(() => {
+    const imageItems = items.filter(i => !i.mediaType || i.mediaType === 'image');
+    const videoItems = items.filter(i => i.mediaType === 'video');
+    return {
+      image: imageItems.length > 0 ? imageItems.length : 1,
+      video: videoItems.length > 0 ? videoItems.length : 1
+    };
+  });
   const [focusNewRow, setFocusNewRow] = useState(false);
   const [columnMode, setColumnMode] = useState<'2col' | '3col'>('3col');
   // Set initial mediaType based on last item (most recently added from landing)
+  // In review mode, always start with 'image' tab
   const [mediaType, setMediaType] = useState<'image' | 'video'>(() => {
+    if (reviewMode?.isReviewMode) {
+      return 'image';
+    }
     if (items.length > 0) {
       const lastItem = items[items.length - 1];
       return lastItem.mediaType || 'image';
@@ -802,14 +814,25 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   };
 
 
-  // Update targetCount when switching tabs
+  // Update targetCount when switching tabs or items change
   useEffect(() => {
-    const currentTabItems = items.filter(item => {
-      if (!item.mediaType) return mediaType === 'image'; // Old items default to image
-      return item.mediaType === mediaType;
+    // Skip in review mode
+    if (reviewMode?.isReviewMode) return;
+
+    const imageItems = items.filter(item => !item.mediaType || item.mediaType === 'image');
+    const videoItems = items.filter(item => item.mediaType === 'video');
+
+    setTargetCountByType(prev => {
+      const newImageCount = imageItems.length || 1;
+      const newVideoCount = videoItems.length || 1;
+
+      // Only update if different to avoid unnecessary re-renders
+      if (prev.image !== newImageCount || prev.video !== newVideoCount) {
+        return { image: newImageCount, video: newVideoCount };
+      }
+      return prev;
     });
-    setTargetCount(currentTabItems.length || 1);
-  }, [mediaType]); // Don't depend on items to avoid infinite loop
+  }, [items, reviewMode?.isReviewMode]);
 
   // Selection & Sorting
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -866,33 +889,22 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   // Desktop Sidebar State
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
-  // Hide sidebar in review mode
+  // Hide sidebar in review mode and set default media filter to 'image'
   useEffect(() => {
     if (reviewMode?.isReviewMode) {
       setDesktopSidebarOpen(false);
+      // Set default filter to 'image' when entering review mode
+      setReviewMediaFilter('image');
     }
   }, [reviewMode?.isReviewMode]);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
   const handleAddNewProject = () => {
-    let newProjectNumber = 1;
-    const projectNumbers = projects
-        .map(p => {
-            const match = p.name.match(/^Project (\d+)$/);
-            return match ? parseInt(match[1]) : 0;
-        })
-        .filter(n => n > 0);
-
-    if (projects.length > 0) {
-      newProjectNumber = (projectNumbers.length > 0 ? Math.max(...projectNumbers) : 0) + 1;
-    }
-
-    const newProjectName = `Project ${newProjectNumber}`;
-    // Create project in current folder context
+    // Create project in current folder context (addProject will assign proper number)
     // Priority: 1) current selected folder, 2) active project's folder, 3) root
     const targetFolderId = currentFolderId || activeProject?.folderId || null;
-    addProject(newProjectName, targetFolderId);
+    addProject('', targetFolderId); // Pass empty string, addProject will generate proper name
   };
 
   // Handle adding candidate URL
@@ -1037,8 +1049,13 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     toast.success('Review link created successfully!');
   };
 
-  // Initialize items when targetCount changes
+  // Initialize items when targetCount changes for current media type
   useEffect(() => {
+    // Skip in review mode
+    if (reviewMode?.isReviewMode) return;
+
+    const targetCount = targetCountByType[mediaType];
+
     setItems(prev => {
       const current = [...prev];
       // Only count items that match current mediaType
@@ -1047,6 +1064,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         return item.mediaType === mediaType;
       });
 
+      // Only add items if current tab has fewer than targetCount
       if (currentTabItems.length < targetCount) {
         // Add more items for current tab
         const needed = targetCount - currentTabItems.length;
@@ -1060,7 +1078,8 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
           status: 'pending' as const,
           history: [],
           createdAt: Date.now() + i,
-          mediaType: mediaType // Assign current mediaType to new items
+          mediaType: mediaType, // Assign current mediaType to new items
+          isolated: true // Default to manual mode (no AI context)
         }));
         return [...current, ...newItems];
       } else if (currentTabItems.length > targetCount) {
@@ -1071,7 +1090,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       }
       return current;
     });
-  }, [targetCount, mediaType]);
+  }, [targetCountByType, mediaType, reviewMode?.isReviewMode]); // Depend on targetCountByType and mediaType
 
   const handleUpdateItem = (id: string, field: keyof BulkItem, value: any) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
@@ -1137,8 +1156,11 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     // But usually we rely on parent to update `items` prop.
     // Let's assume parent updates `items`.
 
-    // Also update targetCount
-    setTargetCount(prev => Math.max(1, prev - selectedIds.size));
+    // Also update targetCount for current media type
+    setTargetCountByType(prev => ({
+      ...prev,
+      [mediaType]: Math.max(1, prev[mediaType] - selectedIds.size)
+    }));
     setSelectedIds(new Set());
     setIsSelectionMode(false);
   };
@@ -2770,7 +2792,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                 .map(([source, count]) => `${source}: ${count}`)
                 .join(', ');
 
-            toast.success(`Generated ${mediaType === 'video' ? 'videos' : 'images'} for ${itemsToProcess.length} items (${sourcesSummary})`);
+            toast.success(`Searched ${mediaType === 'video' ? 'videos' : 'images'} for ${itemsToProcess.length} items (${sourcesSummary})`);
         } catch (error) {
             console.error('[BulkGenerator Extract] Batch processing error:', error);
             toast.error('Some images failed to generate');
@@ -2780,11 +2802,14 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   // Sorting Logic - Filter items by media type
   const filteredItems = (items || []).filter(item => {
-    // Filter by media type
-    if (!item.mediaType) {
-      if (mediaType !== 'image') return false; // Old items default to image
-    } else if (item.mediaType !== mediaType) {
-      return false;
+    // Skip mediaType tab filtering in review mode (use reviewMediaFilter instead)
+    if (!reviewMode?.isReviewMode) {
+      // Filter by media type (only for normal user sessions)
+      if (!item.mediaType) {
+        if (mediaType !== 'image') return false; // Old items default to image
+      } else if (item.mediaType !== mediaType) {
+        return false;
+      }
     }
 
     // Filter by project in review mode
@@ -2806,6 +2831,14 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   // Apply review filter for creator view
   const filteredItemsByReview = useMemo(() => {
     let filtered = sortedItems;
+
+    // Filter out empty items in review mode
+    if (reviewMode?.isReviewMode) {
+      filtered = filtered.filter(item => {
+        // Keep items that have word or imageUrl
+        return item.word?.trim() || item.imageUrl;
+      });
+    }
 
     // Apply review status filter (only for creator view)
     if (!reviewMode?.isReviewMode && reviewFilter !== 'all') {
@@ -2852,12 +2885,29 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   // Count items by media type for filter UI
   const mediaTypeCounts = useMemo(() => {
     const counts = { image: 0, video: 0 };
-    sortedItems.forEach(item => {
-      if (item.mediaType === 'image') counts.image++;
-      else if (item.mediaType === 'video') counts.video++;
+    // Count from all items (not filtered by current mediaType tab)
+    // But respect project filter in folder review mode
+    const itemsToCount = (items || []).filter(item => {
+      // Filter out empty items in review mode
+      if (reviewMode?.isReviewMode) {
+        if (!item.word?.trim() && !item.imageUrl) return false;
+      }
+
+      // Filter by project in review mode
+      if (reviewMode?.isReviewMode && reviewMode?.reviewType === 'folder' && selectedReviewProjectId) {
+        if (item.projectId !== selectedReviewProjectId) return false;
+      }
+      return true;
+    });
+
+    itemsToCount.forEach(item => {
+      // Items without mediaType default to 'image'
+      const type = item.mediaType || 'image';
+      if (type === 'image') counts.image++;
+      else if (type === 'video') counts.video++;
     });
     return counts;
-  }, [sortedItems]);
+  }, [items, reviewMode?.isReviewMode, reviewMode?.reviewType, selectedReviewProjectId]);
 
   // Check if both media types exist
   const hasMixedMedia = mediaTypeCounts.image > 0 && mediaTypeCounts.video > 0;
@@ -3026,15 +3076,15 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         type="number"
                         min="1"
                         max="50"
-                        value={targetCount}
+                        value={targetCountByType[mediaType]}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val === '') {
-                            setTargetCount(1);
+                            setTargetCountByType(prev => ({ ...prev, [mediaType]: 1 }));
                           } else {
                             const num = parseInt(val);
                             if (!isNaN(num) && num >= 1) {
-                              setTargetCount(num);
+                              setTargetCountByType(prev => ({ ...prev, [mediaType]: num }));
                             }
                           }
                         }}
@@ -3043,14 +3093,14 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-0">
                         <button
                           type="button"
-                          onClick={() => setTargetCount(prev => Math.min(50, prev + 1))}
+                          onClick={() => setTargetCountByType(prev => ({ ...prev, [mediaType]: Math.min(50, prev[mediaType] + 1) }))}
                           className="h-3.5 w-4 flex items-center justify-center hover:bg-slate-200 rounded-sm transition-colors"
                         >
                           <ChevronUp className="h-3 w-3 opacity-30" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => setTargetCount(prev => Math.max(1, prev - 1))}
+                          onClick={() => setTargetCountByType(prev => ({ ...prev, [mediaType]: Math.max(1, prev[mediaType] - 1) }))}
                           className="h-3.5 w-4 flex items-center justify-center hover:bg-slate-200 rounded-sm transition-colors"
                         >
                           <ChevronDown className="h-3 w-3 opacity-30" />
@@ -3399,7 +3449,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
+                      onClick={() => { setTargetCountByType(prev => ({ ...prev, [mediaType]: prev[mediaType] + 1 })); setFocusNewRow(true); }}
                       className="h-8 text-xs"
                     >
                       <Plus className="h-3.5 w-3.5 mr-2 text-slate-500" />
@@ -3456,23 +3506,29 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       ) : null;
                     })()}
 
-                    <Button
-                      onClick={handleSubmitReview}
-                      disabled={isSubmittingReview}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isSubmittingReview ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                          Submitting...
-                        </>
-                      ) : (
-                        <>
-                          <Check className="h-3.5 w-3.5 mr-1" />
-                          Submit
-                        </>
-                      )}
-                    </Button>
+                    {/* Media Type Filter (only show if both types exist) */}
+                    {hasMixedMedia && (
+                      <div className="flex gap-1">
+                        <Button
+                          variant={reviewMediaFilter === 'image' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setReviewMediaFilter(reviewMediaFilter === 'image' ? null : 'image')}
+                          className="h-8 text-xs"
+                        >
+                          <ImageIcon className="h-3.5 w-3.5 mr-1" />
+                          이미지 ({mediaTypeCounts.image})
+                        </Button>
+                        <Button
+                          variant={reviewMediaFilter === 'video' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setReviewMediaFilter(reviewMediaFilter === 'video' ? null : 'video')}
+                          className="h-8 text-xs"
+                        >
+                          <Video className="h-3.5 w-3.5 mr-1" />
+                          비디오 ({mediaTypeCounts.video})
+                        </Button>
+                      </div>
+                    )}
                   </>
                 ) : (
                   /* Normal Mode Mobile Toolbar */
@@ -3503,7 +3559,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => { setTargetCount(prev => prev + 1); setFocusNewRow(true); }}
+                      onClick={() => { setTargetCountByType(prev => ({ ...prev, [mediaType]: prev[mediaType] + 1 })); setFocusNewRow(true); }}
                       className="h-8 text-xs"
                     >
                       <Plus className="h-3.5 w-3.5 mr-1 text-slate-500" />
@@ -3525,7 +3581,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         </div>
 
         {/* Mobile Card View */}
-        <div className="flex-1 overflow-y-auto md:hidden p-3 space-y-3 pb-20">
+        <div className={`flex-1 overflow-y-auto md:hidden p-3 space-y-3 ${reviewMode?.isReviewMode ? 'pb-28' : 'pb-20'}`}>
           {filteredItemsByReview.map((item, idx) => (
             <Card key={item.id} className={`border-slate-300 shadow-sm ${isSelectionMode && selectedIds.has(item.id) ? 'ring-2 ring-slate-400' : ''}`}>
               <CardContent className="p-0 space-y-0">
@@ -4333,6 +4389,29 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         )}
         </div>
 
+        {/* Fixed Bottom Submit Button (Mobile Review Mode Only) */}
+        {reviewMode?.isReviewMode && (
+          <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-lg z-20">
+            <Button
+              onClick={handleSubmitReview}
+              disabled={isSubmittingReview}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-12 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmittingReview ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Submit Review
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
       </Card>
       </div>
     </div>
@@ -4561,6 +4640,18 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         onOpenChange={setShowAddProjectDialog}
         title="Create New Project"
         description="Enter a name for your new project."
+        initialName={(() => {
+          // Calculate default name based on current folder context
+          const targetFolderId = currentFolderId || activeProject?.folderId || null;
+          const projectsInSameFolder = projects.filter(p => p.folderId === targetFolderId);
+          const defaultNameProjects = projectsInSameFolder.filter(p => /^Project #\d+$/.test(p.name));
+          const existingNumbers = defaultNameProjects.map(p => {
+            const match = p.name.match(/^Project #(\d+)$/);
+            return match ? parseInt(match[1]) : 0;
+          });
+          const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+          return `Project #${nextNumber}`;
+        })()}
         confirmText="Create"
         onConfirm={(name) => {
           // Create project in current folder context

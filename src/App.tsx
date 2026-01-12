@@ -78,7 +78,7 @@ const createEmptyBulkItem = (number: number = 1): any => {
     status: 'pending' as const,
     history: [],
     createdAt: Date.now(),
-    isolated: false,
+    isolated: true, // Default to manual mode (no AI context)
     isolatedBackground: false,
     usedImageUrls: [],
     currentPage: 1
@@ -420,13 +420,22 @@ export default function App() {
     }
 
     // Create a new project when not logged in or no projects exist
-    const projectNumber = projects.length + 1;
-    const projectName = `Project ${projectNumber}`;
+    // Use root level (folderId = null) for landing-created projects
+    const targetFolderId = currentFolderId || null;
+    const projectsInSameFolder = projects.filter(p => p.folderId === targetFolderId);
+    const defaultNameProjects = projectsInSameFolder.filter(p => /^Project #\d+$/.test(p.name));
+    const existingNumbers = defaultNameProjects.map(p => {
+      const match = p.name.match(/^Project #(\d+)$/);
+      return match ? parseInt(match[1]) : 0;
+    });
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+    const projectName = `Project #${nextNumber}`;
 
     const newProject: Project = {
         id: getRandomId(),
         name: projectName,
         items: [],
+        folderId: targetFolderId,
     };
 
     const generatedItems: BulkItem[] = newItems.map((item, idx) => ({
@@ -459,11 +468,22 @@ export default function App() {
 
   // Project Management Functions
   const addProject = (name: string, folderId?: string | null) => {
+    const targetFolderId = folderId || currentFolderId || null;
+
+    // Find the next available number for projects in the same folder
+    const projectsInSameFolder = projects.filter(p => p.folderId === targetFolderId);
+    const defaultNameProjects = projectsInSameFolder.filter(p => /^Project #\d+$/.test(p.name));
+    const existingNumbers = defaultNameProjects.map(p => {
+      const match = p.name.match(/^Project #(\d+)$/);
+      return match ? parseInt(match[1]) : 0;
+    });
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+
     const newProject: Project = {
       id: getRandomId(),
-      name: name,
+      name: name || `Project #${nextNumber}`,
       items: [createEmptyBulkItem(1)], // Add first empty item
-      folderId: folderId || currentFolderId || null,
+      folderId: targetFolderId,
     };
     setProjects(prev => [...prev, newProject]);
     setActiveProjectId(newProject.id);
@@ -493,6 +513,7 @@ export default function App() {
         id: getRandomId(),
         name: newName,
         items: projectToDuplicate.items.map(item => ({ ...item, id: getRandomId(), createdAt: Date.now() })), // Deep copy items with new IDs
+        folderId: projectToDuplicate.folderId, // Preserve folder location
       };
       setProjects(prev => [...prev, duplicatedProject]);
       setActiveProjectId(duplicatedProject.id);
@@ -518,11 +539,29 @@ export default function App() {
       }
 
       setProjects(prev => {
+        const deletedProject = prev.find(p => p.id === id);
         const updatedProjects = prev.filter(p => p.id !== id);
+
         if (updatedProjects.length === 0) {
           setActiveProjectId(null);
           setViewMode('landing');
           return [];
+        }
+
+        // Renumber default-named projects in the same folder
+        if (deletedProject) {
+          const sameFolderProjects = updatedProjects
+            .filter(p => p.folderId === deletedProject.folderId && /^Project #\d+$/.test(p.name))
+            .sort((a, b) => {
+              const numA = parseInt(a.name.match(/^Project #(\d+)$/)?.[1] || '0');
+              const numB = parseInt(b.name.match(/^Project #(\d+)$/)?.[1] || '0');
+              return numA - numB;
+            });
+
+          // Reassign numbers sequentially
+          sameFolderProjects.forEach((project, index) => {
+            project.name = `Project #${index + 1}`;
+          });
         }
 
         if (activeProjectId === id) {
