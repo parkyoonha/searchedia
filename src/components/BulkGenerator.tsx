@@ -843,6 +843,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   // Review filtering
   const [reviewFilter, setReviewFilter] = useState<'all' | 'approved' | 'rejected'>('all');
   const [hideAllReviews, setHideAllReviews] = useState(false);
+  const [reviewMediaFilter, setReviewMediaFilter] = useState<'image' | 'video' | null>(null);
 
   // Confirm Complete Dialog
   const [showConfirmComplete, setShowConfirmComplete] = useState(false);
@@ -2804,26 +2805,35 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   // Apply review filter for creator view
   const filteredItemsByReview = useMemo(() => {
-    // In review mode or if filter is 'all', return all items
-    if (reviewMode?.isReviewMode || reviewFilter === 'all') return sortedItems;
+    let filtered = sortedItems;
 
-    return sortedItems.filter(item => {
-      // Skip items with completed reviews
-      if (item.reviewCompleted) return false;
+    // Apply review status filter (only for creator view)
+    if (!reviewMode?.isReviewMode && reviewFilter !== 'all') {
+      filtered = filtered.filter(item => {
+        // Skip items with completed reviews
+        if (item.reviewCompleted) return false;
 
-      // Get review results for this item
-      const reviewResult = getReviewResultsForItem(item.id);
-      if (!reviewResult) return false;
+        // Get review results for this item
+        const reviewResult = getReviewResultsForItem(item.id);
+        if (!reviewResult) return false;
 
-      // Skip hidden items
-      if (item.reviewHidden) return false;
+        // Skip hidden items
+        if (item.reviewHidden) return false;
 
-      // Apply filter
-      if (reviewFilter === 'approved') return reviewResult.status === 'approved';
-      if (reviewFilter === 'rejected') return reviewResult.status === 'rejected';
-      return true;
-    });
-  }, [sortedItems, reviewFilter, reviewMode?.isReviewMode, reviewSessions, activeProjectId, currentFolderId, getReviewResultsForItem]);
+        // Apply filter
+        if (reviewFilter === 'approved') return reviewResult.status === 'approved';
+        if (reviewFilter === 'rejected') return reviewResult.status === 'rejected';
+        return true;
+      });
+    }
+
+    // Apply media type filter (for both review mode and creator view)
+    if (reviewMediaFilter) {
+      filtered = filtered.filter(item => item.mediaType === reviewMediaFilter);
+    }
+
+    return filtered;
+  }, [sortedItems, reviewFilter, reviewMediaFilter, reviewMode?.isReviewMode, reviewSessions, activeProjectId, currentFolderId, getReviewResultsForItem]);
 
   // Count items by review status for filter UI
   const reviewCounts = useMemo(() => {
@@ -2838,6 +2848,19 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     });
     return counts;
   }, [sortedItems, reviewSessions, activeProjectId, currentFolderId, getReviewResultsForItem]);
+
+  // Count items by media type for filter UI
+  const mediaTypeCounts = useMemo(() => {
+    const counts = { image: 0, video: 0 };
+    sortedItems.forEach(item => {
+      if (item.mediaType === 'image') counts.image++;
+      else if (item.mediaType === 'video') counts.video++;
+    });
+    return counts;
+  }, [sortedItems]);
+
+  // Check if both media types exist
+  const hasMixedMedia = mediaTypeCounts.image > 0 && mediaTypeCounts.video > 0;
 
   const maxCreatedAt = (items || []).length > 0 ? Math.max(...(items || []).map(i => i.createdAt)) : 0;
   
@@ -3291,6 +3314,30 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         </Select>
                       ) : null;
                     })()}
+
+                    {/* Media Type Filter (only show if both types exist) */}
+                    {hasMixedMedia && (
+                      <div className="flex gap-1">
+                        <Button
+                          variant={reviewMediaFilter === 'image' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setReviewMediaFilter(reviewMediaFilter === 'image' ? null : 'image')}
+                          className="h-8 text-xs"
+                        >
+                          <ImageIcon className="h-3.5 w-3.5 mr-1" />
+                          이미지 ({mediaTypeCounts.image})
+                        </Button>
+                        <Button
+                          variant={reviewMediaFilter === 'video' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setReviewMediaFilter(reviewMediaFilter === 'video' ? null : 'video')}
+                          className="h-8 text-xs"
+                        >
+                          <Video className="h-3.5 w-3.5 mr-1" />
+                          비디오 ({mediaTypeCounts.video})
+                        </Button>
+                      </div>
+                    )}
 
                     <Button
                       onClick={handleSubmitReview}
