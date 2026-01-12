@@ -888,7 +888,10 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     }
 
     const newProjectName = `Project ${newProjectNumber}`;
-    addProject(newProjectName);
+    // Create project in current folder context
+    // Priority: 1) current selected folder, 2) active project's folder, 3) root
+    const targetFolderId = currentFolderId || activeProject?.folderId || null;
+    addProject(newProjectName, targetFolderId);
   };
 
   // Handle adding candidate URL

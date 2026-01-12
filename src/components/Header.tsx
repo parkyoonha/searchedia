@@ -110,7 +110,11 @@ export const Header: React.FC<HeaderProps> = ({
     }
 
     const newProjectName = `Project ${newProjectNumber}`;
-    addProject(newProjectName);
+    // Create project in current folder context
+    // Priority: 1) current selected folder, 2) active project's folder, 3) root
+    const activeProject = projects.find(p => p.id === activeProjectId);
+    const targetFolderId = currentFolderId || activeProject?.folderId || null;
+    addProject(newProjectName, targetFolderId);
   };
 
   return (
@@ -280,7 +284,11 @@ export const Header: React.FC<HeaderProps> = ({
         description="Enter a name for your new project."
         confirmText="Create"
         onConfirm={(name) => {
-          addProject(name);
+          // Create project in current folder context
+          // Priority: 1) current selected folder, 2) active project's folder, 3) root
+          const activeProject = projects.find(p => p.id === activeProjectId);
+          const targetFolderId = currentFolderId || activeProject?.folderId || null;
+          addProject(name, targetFolderId);
           setShowAddProjectDialog(false);
         }}
       />
