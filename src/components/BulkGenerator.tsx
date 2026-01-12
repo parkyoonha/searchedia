@@ -4218,7 +4218,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
         {/* Review Filter Bar */}
         {!reviewMode?.isReviewMode && (reviewCounts.approved > 0 || reviewCounts.rejected > 0) && (
-          <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 shadow-lg" style={{ height: '64px' }}>
+          <div className={`fixed bottom-0 right-0 z-30 bg-white border-t border-slate-200 shadow-lg transition-all duration-300 ${desktopSidebarOpen ? 'left-64' : 'left-0'}`} style={{ height: '64px' }}>
             <div className="h-full px-4 flex items-center justify-between gap-4">
               {/* Left Side: Hide Toggle + Filter Tabs */}
               <div className="flex gap-2 items-center flex-wrap">
