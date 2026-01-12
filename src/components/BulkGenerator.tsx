@@ -757,24 +757,40 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   });
 
   // Update mediaType when new items are added (e.g., from landing wizard)
+  // OR when switching projects (to match the project's items)
   const prevItemsLengthRef = useRef(items.length);
+  const prevProjectIdRef = useRef(activeProjectId);
 
   useEffect(() => {
     const currentLength = items.length;
     const prevLength = prevItemsLengthRef.current;
+    const currentProjectId = activeProjectId;
+    const prevProjectId = prevProjectIdRef.current;
 
-    // Only update when items are added (length increases)
-    if (currentLength > prevLength && currentLength > 0) {
-      // Get the newly added items
+    // Check if project was switched
+    const projectSwitched = currentProjectId !== prevProjectId;
+
+    if (projectSwitched && currentLength > 0 && !reviewMode?.isReviewMode) {
+      // Project switched: set mediaType based on first available item type
+      const firstItem = items.find(item => item.mediaType);
+      if (firstItem) {
+        console.log('[BulkGenerator] Project switched, setting mediaType to:', firstItem.mediaType);
+        setMediaType(firstItem.mediaType);
+      } else {
+        // If no items have mediaType, default to image
+        setMediaType('image');
+      }
+    } else if (!projectSwitched && currentLength > prevLength && currentLength > 0) {
+      // Items added (not switched): use the new item's mediaType
       const newItems = items.slice(prevLength);
-      // Use the first new item's mediaType
       if (newItems.length > 0 && newItems[0]?.mediaType) {
         setMediaType(newItems[0].mediaType);
       }
     }
 
     prevItemsLengthRef.current = currentLength;
-  }, [items]);
+    prevProjectIdRef.current = currentProjectId;
+  }, [items, activeProjectId, reviewMode?.isReviewMode]);
 
   // Separate settings for Image and Video tabs
   const [imageSettings, setImageSettings] = useState({
@@ -1193,6 +1209,25 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       return; // Prevent double submission
     }
 
+    // Validate: Check if all items have been reviewed (for folder reviews)
+    if (reviewMode.reviewType === 'folder') {
+      // Filter out empty items
+      const validItems = items.filter(item => item.word?.trim() || item.imageUrl);
+      const unreviewed = validItems.filter(item => !item.reviewStatus);
+
+      if (unreviewed.length > 0) {
+        // Get unique project IDs from unreviewed items
+        const unreviewedProjects = new Set(unreviewed.map(item => item.projectName).filter(Boolean));
+        const projectList = Array.from(unreviewedProjects).join(', ');
+
+        toast.error(
+          `Please review all items before submitting. ${unreviewed.length} items not reviewed${projectList ? ` in: ${projectList}` : ''}`,
+          { id: 'submit-review', duration: 5000 }
+        );
+        return;
+      }
+    }
+
     setIsSubmittingReview(true);
     toast.loading('Submitting review...', { id: 'submit-review' });
 
@@ -1226,24 +1261,29 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     // Filter completed review sessions for current project or folder
     const completedSessions = reviewSessions
       .filter((s: any) => {
-        if (s.status !== 'completed') return false;
+        if (!s || s.status !== 'completed') return false;
         if (s.review_type === 'project') return s.project_id === activeProjectId;
         if (s.review_type === 'folder') {
           // Match if viewing the folder directly OR if current project belongs to the reviewed folder
-          return s.folder_id === currentFolderId || s.folder_id === projectFolderId;
+          // Also check if folder_id is defined before comparing
+          return (currentFolderId && s.folder_id === currentFolderId) ||
+                 (projectFolderId && s.folder_id === projectFolderId);
         }
         return false;
       })
       .sort((a: any, b: any) => {
         // Sort by reviewed_at descending (most recent first)
-        const dateA = new Date(a.reviewed_at).getTime();
-        const dateB = new Date(b.reviewed_at).getTime();
+        const dateA = new Date(a.reviewed_at || 0).getTime();
+        const dateB = new Date(b.reviewed_at || 0).getTime();
         return dateB - dateA;
       });
 
     // Find the most recent review for this specific item
     for (const session of completedSessions) {
-      const reviewedItem = session.items?.find((i: any) => i.id === itemId);
+      if (!session.items || !Array.isArray(session.items)) {
+        continue;
+      }
+      const reviewedItem = session.items.find((i: any) => i && i.id === itemId);
       if (reviewedItem?.reviewStatus && reviewedItem.reviewStatus !== 'pending') {
         return {
           status: reviewedItem.reviewStatus,
@@ -2820,6 +2860,17 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     return true;
   });
 
+  // Debug logging for filtered items
+  useEffect(() => {
+    console.log('[BulkGenerator] Items filtered:', {
+      totalItems: items.length,
+      filteredItems: filteredItems.length,
+      mediaType,
+      reviewMode: reviewMode?.isReviewMode,
+      activeProjectId
+    });
+  }, [items.length, filteredItems.length, mediaType, reviewMode?.isReviewMode, activeProjectId]);
+
   const sortedItems = [...(filteredItems || [])].sort((a, b) => {
     if (sortBy === 'word-asc') return a.word.localeCompare(b.word);
     if (sortBy === 'word-desc') return b.word.localeCompare(a.word);
@@ -3934,6 +3985,30 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               </TableRow>
            </TableHeader>
            <TableBody>
+              {filteredItemsByReview.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={20} className="text-center py-12">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="text-slate-400 text-sm">
+                        {items.length === 0 ? (
+                          'No items in this project'
+                        ) : (
+                          <>No items match the current filter ({mediaType})</>
+                        )}
+                      </div>
+                      {items.length > 0 && filteredItems.length === 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setMediaType(mediaType === 'image' ? 'video' : 'image')}
+                        >
+                          Switch to {mediaType === 'image' ? 'Video' : 'Image'} tab
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : null}
               {filteredItemsByReview.map((item, idx) => (
                  <TableRow
                    key={item.id}

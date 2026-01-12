@@ -46,6 +46,7 @@ import { toast, Toaster } from "sonner";
 import { PricingDialog, PaymentDialog, LoginDialog } from './components/subscription/SubscriptionModals';
 import { supabase } from './lib/supabase';
 import { loadProjectsFromDB, saveProjectToDB, deleteProjectFromDB, syncProjectsToDB, loadFoldersFromDB, syncFoldersToDB, deleteFolderFromDB } from './lib/database';
+import { getMyReviewSessions } from './lib/reviewDatabase';
 
 export interface Folder {
   id: string;
@@ -244,8 +245,13 @@ export default function App() {
           const parsed = JSON.parse(localProjects);
           if (parsed.length > 0) {
             console.log('[App] Loading from localStorage:', parsed.length, 'projects');
-            setProjects(parsed);
-            setActiveProjectId(parsed[0].id);
+            // Ensure all projects have items array
+            const validatedProjects = parsed.map((p: Project) => ({
+              ...p,
+              items: Array.isArray(p.items) ? p.items : []
+            }));
+            setProjects(validatedProjects);
+            setActiveProjectId(validatedProjects[0].id);
             const savedViewMode = localStorage.getItem('geminiViewMode');
             if (savedViewMode === 'bulk') {
               setViewMode('bulk');
@@ -269,8 +275,13 @@ export default function App() {
         ]).then(dbProjects => {
           if (dbProjects.length > 0) {
             console.log('[App] Loaded from DB:', dbProjects.length, 'projects');
-            setProjects(dbProjects);
-            setActiveProjectId(dbProjects[0].id);
+            // Ensure all projects have items array
+            const validatedProjects = dbProjects.map((p: Project) => ({
+              ...p,
+              items: Array.isArray(p.items) ? p.items : []
+            }));
+            setProjects(validatedProjects);
+            setActiveProjectId(validatedProjects[0].id);
           } else if (localProjects) {
             // Sync localStorage to DB
             const parsed = JSON.parse(localProjects);
@@ -337,7 +348,24 @@ export default function App() {
   }, []); // Empty dependency array - only run once on mount
 
   const activeProject = projects.find(p => p.id === activeProjectId);
-  const activeItems = activeProject ? activeProject.items : [];
+  const activeItems = activeProject?.items || [];
+
+  // Debug logging
+  useEffect(() => {
+    if (activeProjectId) {
+      console.log('[App] Active project changed:', {
+        projectId: activeProjectId,
+        projectName: activeProject?.name,
+        itemsCount: activeItems.length,
+        folderId: activeProject?.folderId
+      });
+    }
+  }, [activeProjectId, activeProject, activeItems.length]);
+
+  // Ensure activeItems is always an array
+  if (!Array.isArray(activeItems)) {
+    console.error('[App] activeItems is not an array:', activeItems);
+  }
 
   const updateActiveProjectItems = (newItems: BulkItem[] | ((prev: BulkItem[]) => BulkItem[])) => {
     if (!activeProjectId) return;
@@ -493,7 +521,7 @@ export default function App() {
       ? folders.find(f => f.id === (folderId || currentFolderId))?.name
       : null;
     const location = folderName ? ` in folder "${folderName}"` : '';
-    toast.success(`Project "${name}" created${location}.`);
+    toast.success(`Project "${newProject.name}" created${location}.`);
 
     // Reset current folder ID
     setCurrentFolderId(null);
@@ -578,10 +606,16 @@ export default function App() {
   };
 
   const switchActiveProject = (id: string | null) => {
-    setActiveProjectId(id);
     if (id) {
-      toast.info(`Switched to project "${projects.find(p => p.id === id)?.name}".`);
+      const project = projects.find(p => p.id === id);
+      if (!project) {
+        console.error('[App] Project not found:', id);
+        toast.error('프로젝트를 찾을 수 없습니다.');
+        return;
+      }
+      toast.info(`Switched to project "${project.name}".`);
     }
+    setActiveProjectId(id);
   };
 
   // Folder Management Functions
@@ -665,6 +699,83 @@ export default function App() {
       return next;
     });
   };
+
+  // Apply folder review results to projects
+  useEffect(() => {
+    if (!user || !isInitialLoadComplete) return;
+
+    const applyFolderReviewsToProjects = async () => {
+      try {
+        const result = await getMyReviewSessions();
+        if (!result.success || !result.sessions) return;
+
+        // Find completed folder reviews
+        const completedFolderReviews = result.sessions.filter(
+          (s: any) => s.status === 'completed' && s.review_type === 'folder' && s.folder_id
+        );
+
+        if (completedFolderReviews.length === 0) return;
+
+        console.log('[App] Found completed folder reviews:', completedFolderReviews.length);
+
+        // Group review items by projectId
+        const reviewItemsByProject = new Map<string, Map<string, any>>();
+
+        completedFolderReviews.forEach((session: any) => {
+          session.items?.forEach((reviewItem: any) => {
+            if (reviewItem.projectId && reviewItem.id) {
+              if (!reviewItemsByProject.has(reviewItem.projectId)) {
+                reviewItemsByProject.set(reviewItem.projectId, new Map());
+              }
+              // Store by item.id for quick lookup
+              reviewItemsByProject.get(reviewItem.projectId)!.set(reviewItem.id, {
+                reviewStatus: reviewItem.reviewStatus,
+                reviewComment: reviewItem.reviewComment
+              });
+            }
+          });
+        });
+
+        if (reviewItemsByProject.size === 0) return;
+
+        console.log('[App] Applying review results to', reviewItemsByProject.size, 'projects');
+
+        // Update projects with review results
+        setProjects(prev => prev.map(project => {
+          const reviewItems = reviewItemsByProject.get(project.id);
+          if (!reviewItems || reviewItems.size === 0) return project;
+
+          // Apply review results to matching items
+          const updatedItems = project.items.map(item => {
+            const reviewData = reviewItems.get(item.id);
+            if (reviewData) {
+              return {
+                ...item,
+                reviewStatus: reviewData.reviewStatus,
+                reviewComment: reviewData.reviewComment
+              };
+            }
+            return item;
+          });
+
+          return {
+            ...project,
+            items: updatedItems
+          };
+        }));
+
+        console.log('[App] Review results applied successfully');
+      } catch (error) {
+        console.error('[App] Error applying folder reviews:', error);
+      }
+    };
+
+    // Run immediately and then every 10 seconds
+    applyFolderReviewsToProjects();
+    const intervalId = setInterval(applyFolderReviewsToProjects, 10000);
+
+    return () => clearInterval(intervalId);
+  }, [user, isInitialLoadComplete]);
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
