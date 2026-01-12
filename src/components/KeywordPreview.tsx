@@ -479,8 +479,8 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
 
   return (
     <div className="flex flex-col pl-0 pr-0 py-3 rounded-lg w-full -mt-3">
-      {/* Mode Toggle - Horizontal */}
-      {hasAI && (
+      {/* Mode Toggle - Horizontal (only show if onModeChange is provided) */}
+      {hasAI && onModeChange && (
         <div className="flex gap-2 mb-1">
           <Button
             variant={mode === 'manual' ? 'default' : 'outline'}
@@ -510,7 +510,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
             <Wand2 className="h-4 w-4" />
             <span className="text-sm font-medium">AI context</span>
           </Button>
-          {mode === 'manual' && (
+          {mode === 'manual' && onIsolatedBackgroundChange && (
             <Button
               variant="ghost"
               size="sm"
@@ -556,7 +556,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
               <span className="text-sm font-medium">Isolated BG</span>
             </Button>
           )}
-          {mode === 'ai' && aiOptimized && !isOptimizing && !isEditing && (
+          {mode === 'ai' && aiOptimized && !isOptimizing && !isEditing && onRegenerateImage && (
             <>
               <Button
                 variant="ghost"
@@ -641,11 +641,11 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
                       <Badge
                         key={idx}
                         variant="secondary"
-                        className="relative text-xs px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer select-none overflow-visible"
-                        onClick={() => setSelectedKeyword(selectedKeyword === kw ? null : kw)}
+                        className={`relative text-xs px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 overflow-visible ${onKeywordsGenerated ? 'cursor-pointer select-none' : ''}`}
+                        onClick={() => onKeywordsGenerated && setSelectedKeyword(selectedKeyword === kw ? null : kw)}
                       >
                         {kw}
-                        {selectedKeyword === kw && (
+                        {onKeywordsGenerated && selectedKeyword === kw && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -660,33 +660,35 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
                       </Badge>
                     ))}
 
-                    {/* Add Keyword Button */}
-                    {isAddingKeyword ? (
-                      <input
-                        ref={addKeywordInputRef}
-                        type="text"
-                        value={newKeyword}
-                        onChange={(e) => setNewKeyword(e.target.value)}
-                        onBlur={handleSaveNewKeyword}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleSaveNewKeyword();
-                          } else if (e.key === 'Escape') {
-                            setNewKeyword('');
-                            setIsAddingKeyword(false);
-                          }
-                        }}
-                        className="h-6 px-2 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-slate-500"
-                        placeholder="Type keyword..."
-                      />
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="text-xs px-1.5 py-0.5 border-dashed border-slate-300 text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors"
-                        onClick={handleStartAddKeyword}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Badge>
+                    {/* Add Keyword Button (only if onAddKeyword is provided) */}
+                    {onAddKeyword && (
+                      isAddingKeyword ? (
+                        <input
+                          ref={addKeywordInputRef}
+                          type="text"
+                          value={newKeyword}
+                          onChange={(e) => setNewKeyword(e.target.value)}
+                          onBlur={handleSaveNewKeyword}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveNewKeyword();
+                            } else if (e.key === 'Escape') {
+                              setNewKeyword('');
+                              setIsAddingKeyword(false);
+                            }
+                          }}
+                          className="h-6 px-2 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-slate-500"
+                          placeholder="Type keyword..."
+                        />
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="text-xs px-1.5 py-0.5 border-dashed border-slate-300 text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors"
+                          onClick={handleStartAddKeyword}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Badge>
+                      )
                     )}
                   </div>
                 </div>
@@ -711,12 +713,14 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
                   variant="secondary"
                   className={`relative overflow-visible ${isolatedBackground
                     ? "bg-slate-100 text-slate-700 border border-slate-200 text-xs px-2 py-0.5"
-                    : "bg-slate-100 text-slate-700 border border-slate-200 text-xs px-2 py-0.5 cursor-pointer select-none"
+                    : onKeywordsGenerated
+                      ? "bg-slate-100 text-slate-700 border border-slate-200 text-xs px-2 py-0.5 cursor-pointer select-none"
+                      : "bg-slate-100 text-slate-700 border border-slate-200 text-xs px-2 py-0.5"
                   }`}
-                  onClick={() => !isolatedBackground && setSelectedKeyword(selectedKeyword === kw ? null : kw)}
+                  onClick={() => !isolatedBackground && onKeywordsGenerated && setSelectedKeyword(selectedKeyword === kw ? null : kw)}
                 >
                   {kw}
-                  {!isolatedBackground && selectedKeyword === kw && (
+                  {!isolatedBackground && onKeywordsGenerated && selectedKeyword === kw && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -731,8 +735,8 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
                 </Badge>
               ))}
 
-              {/* Add Keyword Button (only when not in isolated background mode) */}
-              {!isolatedBackground && (
+              {/* Add Keyword Button (only when not in isolated background mode and onAddKeyword is provided) */}
+              {!isolatedBackground && onAddKeyword && (
                 isAddingKeyword ? (
                   <input
                     ref={addKeywordInputRef}

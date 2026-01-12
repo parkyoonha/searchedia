@@ -27,7 +27,15 @@ export async function loadProjectsFromDB(): Promise<Project[]> {
 
     console.log('[DB] Loaded projects from DB:', data?.length || 0, 'projects');
 
-    return data || [];
+    // Map DB structure to Project interface (folder_id -> folderId)
+    const projects: Project[] = (data || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      items: p.items || [],
+      folderId: p.folder_id
+    }));
+
+    return projects;
   } catch (error) {
     console.error('[DB] Error loading projects:', error);
     return [];
@@ -128,6 +136,26 @@ export async function syncProjectsToDB(projects: Project[], userId?: string): Pr
 
     console.log(`[DB] Syncing ${projects.length} projects for user ${currentUserId}`);
 
+    // Get current projects from DB
+    const { data: dbProjects } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('user_id', currentUserId);
+
+    // Delete projects that are no longer in local state
+    if (dbProjects && dbProjects.length > 0) {
+      const localProjectIds = new Set(projects.map(p => p.id));
+      const projectsToDelete = dbProjects.filter(p => !localProjectIds.has(p.id));
+
+      if (projectsToDelete.length > 0) {
+        console.log(`[DB] Deleting ${projectsToDelete.length} projects that are no longer in local state`);
+        await Promise.all(
+          projectsToDelete.map(p => deleteProjectFromDB(p.id, currentUserId))
+        );
+      }
+    }
+
+    // Upsert all current projects
     const promises = projects.map(project => saveProjectToDB(project, currentUserId));
     const results = await Promise.all(promises);
 
@@ -239,6 +267,26 @@ export async function syncFoldersToDB(folders: Folder[], userId?: string): Promi
 
     console.log(`[DB] Syncing ${folders.length} folders for user ${currentUserId}`);
 
+    // Get current folders from DB
+    const { data: dbFolders } = await supabase
+      .from('folders')
+      .select('id')
+      .eq('user_id', currentUserId);
+
+    // Delete folders that are no longer in local state
+    if (dbFolders && dbFolders.length > 0) {
+      const localFolderIds = new Set(folders.map(f => f.id));
+      const foldersToDelete = dbFolders.filter(f => !localFolderIds.has(f.id));
+
+      if (foldersToDelete.length > 0) {
+        console.log(`[DB] Deleting ${foldersToDelete.length} folders that are no longer in local state`);
+        await Promise.all(
+          foldersToDelete.map(f => deleteFolderFromDB(f.id, currentUserId))
+        );
+      }
+    }
+
+    // Upsert all current folders
     const promises = folders.map(folder => saveFolderToDB(folder, currentUserId));
     const results = await Promise.all(promises);
 

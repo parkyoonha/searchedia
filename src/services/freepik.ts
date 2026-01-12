@@ -95,18 +95,30 @@ export async function searchFreepikImages(
 /**
  * Get a random Freepik image based on query
  */
-export async function getRandomFreepikImage(query: string): Promise<FreepikPhotoResult | null> {
+export async function getRandomFreepikImage(
+  query: string,
+  options: { excludeUrls?: string[]; page?: number } = {}
+): Promise<FreepikPhotoResult | null> {
   try {
-    const images = await searchFreepikImages(query, { perPage: 20 });
+    const { excludeUrls = [], page = 1 } = options;
+    const images = await searchFreepikImages(query, { perPage: 20, page });
 
     if (images.length === 0) {
       console.warn('[Freepik] No images found for query:', query);
       return null;
     }
 
-    // Get a random image from the results
-    const randomIndex = Math.floor(Math.random() * images.length);
-    const selectedImage = images[randomIndex];
+    // Filter out already used images
+    const unusedImages = images.filter(img => !excludeUrls.includes(img.image.source.url));
+
+    if (unusedImages.length === 0) {
+      console.warn('[Freepik] All images on page', page, 'have been used');
+      return null;
+    }
+
+    // Get a random image from the unused results
+    const randomIndex = Math.floor(Math.random() * unusedImages.length);
+    const selectedImage = unusedImages[randomIndex];
 
     const result: FreepikPhotoResult = {
       imageUrl: selectedImage.image.source.url,
@@ -175,18 +187,30 @@ export async function searchFreepikVideos(
 /**
  * Get a random Freepik video based on query
  */
-export async function getRandomFreepikVideo(query: string): Promise<FreepikVideoResult | null> {
+export async function getRandomFreepikVideo(
+  query: string,
+  options: { excludeUrls?: string[]; page?: number } = {}
+): Promise<FreepikVideoResult | null> {
   try {
-    const videos = await searchFreepikVideos(query, { perPage: 20 });
+    const { excludeUrls = [], page = 1 } = options;
+    const videos = await searchFreepikVideos(query, { perPage: 20, page });
 
     if (videos.length === 0) {
       console.warn('[Freepik] No videos found for query:', query);
       return null;
     }
 
-    // Get a random video from the results
-    const randomIndex = Math.floor(Math.random() * videos.length);
-    const selectedVideo = videos[randomIndex];
+    // Filter out already used videos
+    const unusedVideos = videos.filter(video => !excludeUrls.includes(video.image.source.url));
+
+    if (unusedVideos.length === 0) {
+      console.warn('[Freepik] All videos on page', page, 'have been used');
+      return null;
+    }
+
+    // Get a random video from the unused results
+    const randomIndex = Math.floor(Math.random() * unusedVideos.length);
+    const selectedVideo = unusedVideos[randomIndex];
 
     const result: FreepikVideoResult = {
       videoUrl: selectedVideo.image.source.url,

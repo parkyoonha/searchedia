@@ -1,19 +1,24 @@
 import React from 'react';
 import { Badge } from './ui/badge';
-import { Check, X } from 'lucide-react';
+import { Button } from './ui/button';
+import { Check, X, CheckCircle, RotateCcw } from 'lucide-react';
 
 interface ReviewResultsDisplayProps {
   reviewStatus?: 'approved' | 'rejected' | 'pending';
   reviewComment?: string;
   reviewedAt?: string;
   compact?: boolean;
+  onComplete?: () => void;
+  onRequestReReview?: () => void;
 }
 
 export function ReviewResultsDisplay({
   reviewStatus,
   reviewComment,
   reviewedAt,
-  compact = false
+  compact = false,
+  onComplete,
+  onRequestReReview
 }: ReviewResultsDisplayProps) {
   // Don't render if no review status or if still pending
   if (!reviewStatus || reviewStatus === 'pending') {
@@ -76,6 +81,34 @@ export function ReviewResultsDisplay({
         <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">
           {reviewComment}
         </p>
+      )}
+
+      {/* Action Buttons */}
+      {(onComplete || onRequestReReview) && (
+        <div className="flex gap-1 mt-3 pt-2 border-t border-slate-200">
+          {onComplete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-green-600 hover:text-green-700 hover:bg-green-50"
+              onClick={onComplete}
+            >
+              <CheckCircle className="h-3 w-3 mr-1" />
+              처리완료
+            </Button>
+          )}
+          {reviewStatus === 'rejected' && onRequestReReview && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+              onClick={onRequestReReview}
+            >
+              <RotateCcw className="h-3 w-3 mr-1" />
+              재요청
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

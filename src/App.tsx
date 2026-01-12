@@ -160,7 +160,8 @@ export default function App() {
       return;
     }
 
-    if (user && folders.length > 0) {
+    if (user) {
+      // Always save folders to localStorage, even if empty (to clear old data)
       localStorage.setItem('geminiFolders', JSON.stringify(folders));
       console.log('[App] Saved folders to localStorage:', folders.length);
       // Save to DB
@@ -537,9 +538,11 @@ export default function App() {
     }
   };
 
-  const switchActiveProject = (id: string) => {
+  const switchActiveProject = (id: string | null) => {
     setActiveProjectId(id);
-    toast.info(`Switched to project "${projects.find(p => p.id === id)?.name}".`);
+    if (id) {
+      toast.info(`Switched to project "${projects.find(p => p.id === id)?.name}".`);
+    }
   };
 
   // Folder Management Functions

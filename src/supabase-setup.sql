@@ -103,30 +103,35 @@
     items JSONB DEFAULT '[]'::jsonb,
     view_count INTEGER DEFAULT 0,
     max_views INTEGER DEFAULT 10,
-    reviewed_at TIMESTAMP WITH TIME ZONE
+    reviewed_at TIMESTAMP WITH TIME ZONE,
+    is_rereview BOOLEAN DEFAULT false
   );
 
   -- Enable Row Level Security
   ALTER TABLE review_sessions ENABLE ROW LEVEL SECURITY;
 
-  -- Policy: Anyone can view review sessions by share token (for public review links)
-  CREATE POLICY "Anyone can view review sessions by share token"
+  -- Policy: Public can view review sessions (including anonymous users)
+  CREATE POLICY "Public can view review sessions"
     ON review_sessions FOR SELECT
+    TO anon, authenticated
     USING (true);
 
   -- Policy: Authenticated users can insert their own review sessions
-  CREATE POLICY "Users can insert their own review sessions"
+  CREATE POLICY "Authenticated users can insert review sessions"
     ON review_sessions FOR INSERT
+    TO authenticated
     WITH CHECK (auth.uid() = creator_user_id);
 
-  -- Policy: Anyone can update review sessions (for reviewers to submit feedback)
-  CREATE POLICY "Anyone can update review sessions"
+  -- Policy: Public can update review sessions (for reviewers to submit feedback)
+  CREATE POLICY "Public can update review sessions"
     ON review_sessions FOR UPDATE
+    TO anon, authenticated
     USING (true);
 
-  -- Policy: Users can delete their own review sessions
-  CREATE POLICY "Users can delete their own review sessions"
+  -- Policy: Authenticated users can delete their own review sessions
+  CREATE POLICY "Authenticated users can delete their own review sessions"
     ON review_sessions FOR DELETE
+    TO authenticated
     USING (auth.uid() = creator_user_id);
 
   -- Create indexes for better performance
