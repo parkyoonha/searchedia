@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
 import { Switch } from './ui/switch';
@@ -93,10 +93,11 @@ import { getRandomPexelsPhoto, getRandomPexelsVideo } from '../services/pexels';
 import { getRandomPixabayImage, getRandomPixabayVideo } from '../services/pixabay';
 import { getRandomFreepikImage, getRandomFreepikVideo } from '../services/freepik';
 import { KeywordPreview } from './KeywordPreview';
+import { ReviewResultsDisplay } from './ReviewResultsDisplay';
 import { optimizeKeywordsWithAI } from '../services/ai';
 import { ProjectNameDialog } from './project/ProjectNameDialog';
 import { ConfirmDeleteProjectDialog } from './project/ConfirmDeleteProjectDialog';
-import { submitReviewResults, createReviewSession } from '../lib/reviewDatabase';
+import { submitReviewResults, createReviewSession, getMyReviewSessions } from '../lib/reviewDatabase';
 
 // Generate stock site search URL based on source and keywords
 function generateStockSiteSearchUrl(source: string, keywords: string, mediaType: 'image' | 'video' = 'image'): string {
@@ -148,6 +149,8 @@ export interface BulkItem {
   reviewComment?: string; // Reviewer's comment
   usedImageUrls?: string[]; // Track used image URLs to prevent duplicates
   currentPage?: number; // Current page number for API pagination (per source)
+  projectId?: string; // Source project ID for folder-level reviews
+  projectName?: string; // Source project name for folder-level reviews (UI display)
 }
 
 export interface ReviewSession {
@@ -185,7 +188,7 @@ interface BulkGeneratorProps {
   renameProject: (id: string, newName: string) => void;
   duplicateProject: (id: string, newName: string) => void;
   deleteProject: (id: string) => void;
-  switchActiveProject: (id: string) => void;
+  switchActiveProject: (id: string | null) => void;
   folders: Folder[];
   expandedFolders: Set<string>;
   addFolder: (name: string, parentId?: string | null) => void;
@@ -202,6 +205,8 @@ interface BulkGeneratorProps {
     isReviewMode: boolean;
     shareToken: string;
     creatorId: string;
+    isReadOnly?: boolean;
+    reviewType?: 'project' | 'folder';
   };
 }
 
@@ -456,12 +461,18 @@ function ShareForReviewDialog({ open, onOpenChange, reviewLink, onCreateSession 
 }
 
 // Folder Tree Item Component
-function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeProjectId, level, currentFolderId, onToggleExpand, onRenameFolder, onDeleteFolder, onAddSubfolder, onSwitchProject, onRenameProject, onDuplicateProject, onDeleteProject, onShareProject, onExportProject, onMoveProject, onSelectFolder }: any) {
+function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeProjectId, level, currentFolderId, onToggleExpand, onRenameFolder, onDeleteFolder, onAddSubfolder, onShareFolder, onSwitchProject, onRenameProject, onDuplicateProject, onDeleteProject, onShareProject, onExportProject, onMoveProject, onSelectFolder, reviewSessions }: any) {
   const isExpanded = expandedFolders.has(folder.id);
   const isSelected = currentFolderId === folder.id;
   const childFolders = allFolders.filter((f: any) => f.parentId === folder.id);
   const childProjects = projects.filter((p: any) => p.folderId === folder.id);
   const FolderIcon = isExpanded ? FolderOpen : Folder;
+
+  // Check if folder has completed reviews
+  const completedReviews = reviewSessions?.filter((session: any) =>
+    session.status === 'completed' && session.folder_id === folder.id
+  ) || [];
+  const hasNewReview = completedReviews.length > 0;
 
   return (
     <>
@@ -506,6 +517,11 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
               New Subfolder
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onShareFolder(folder.id)}>
+              <Share2 className="mr-2 h-4 w-4" />
+              Share for Review
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onDeleteFolder(folder.id)} className="text-red-600 focus:text-red-600 focus:bg-red-50">
               <Trash2 className="mr-2 h-4 w-4" />
               Delete
@@ -524,6 +540,14 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
         >
           <FolderIcon className="h-3.5 w-3.5 text-slate-500" />
           <span className="text-xs text-slate-700 font-medium">{folder.name}</span>
+          {hasNewReview && (
+            <Badge
+              variant="secondary"
+              className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[9px] px-1.5 h-4 font-medium"
+            >
+              {completedReviews.length} Review{completedReviews.length > 1 ? 's' : ''}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -543,6 +567,7 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
               onRenameFolder={onRenameFolder}
               onDeleteFolder={onDeleteFolder}
               onAddSubfolder={onAddSubfolder}
+              onShareFolder={onShareFolder}
               onSwitchProject={onSwitchProject}
               onRenameProject={onRenameProject}
               onDuplicateProject={onDuplicateProject}
@@ -551,6 +576,7 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
               onExportProject={onExportProject}
               onMoveProject={onMoveProject}
               onSelectFolder={onSelectFolder}
+              reviewSessions={reviewSessions}
             />
           ))}
 
@@ -568,6 +594,7 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
               onExport={onExportProject}
               onMove={onMoveProject}
               folders={allFolders}
+              reviewSessions={reviewSessions}
             />
           ))}
         </>
@@ -577,14 +604,20 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
 }
 
 // Project Tree Item Component
-function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDuplicate, onDelete, onShare, onExport, onMove, folders }: any) {
+function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDuplicate, onDelete, onShare, onExport, onMove, folders, reviewSessions }: any) {
+  // Check if project has completed reviews
+  const completedReviews = reviewSessions?.filter((session: any) =>
+    session.status === 'completed' && session.project_id === project.id
+  ) || [];
+  const hasNewReview = completedReviews.length > 0;
+
   return (
     <div
       className={`flex items-center gap-1 h-8 px-2 rounded transition-all ${
         isActive
           ? 'bg-white border border-slate-300 shadow-sm'
           : 'hover:bg-slate-50'
-      }`}
+      } ${hasNewReview ? 'border-indigo-200' : ''}`}
       style={{ paddingLeft: `${level * 12 + 28}px` }}
     >
       {/* Menu dropdown - now visible and clickable */}
@@ -665,6 +698,14 @@ function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDupli
         <span className={`text-xs ${isActive ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
           {project.name}
         </span>
+        {hasNewReview && (
+          <Badge
+            variant="secondary"
+            className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[9px] px-1.5 h-4 font-medium"
+          >
+            {completedReviews.length} Review{completedReviews.length > 1 ? 's' : ''}
+          </Badge>
+        )}
       </div>
     </div>
   );
@@ -768,6 +809,16 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   const [showRenameProjectDialog, setShowRenameProjectDialog] = useState(false);
   const [showDuplicateProjectDialog, setShowDuplicateProjectDialog] = useState(false);
   const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
+
+  // Review mode - project filter for folder reviews
+  const [selectedReviewProjectId, setSelectedReviewProjectId] = useState<string>('');
+
+  // Review sessions (for creators to see feedback)
+  const [reviewSessions, setReviewSessions] = useState<any[]>([]);
+
+  // Review submission state
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewCompleted, setReviewCompleted] = useState(false);
 
   // Folder Dialogs
   const [showAddFolderDialog, setShowAddFolderDialog] = useState(false);
@@ -878,20 +929,68 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   };
 
+  // Collect items from folder
+  const collectItemsFromFolder = (folderId: string): BulkItem[] => {
+    const projectsInFolder = projects.filter(p => p.folderId === folderId);
+    const allItems: BulkItem[] = [];
+
+    projectsInFolder.forEach(project => {
+      project.items.forEach(item => {
+        // Only include completed items with actual content
+        if (item.status === 'completed' && item.imageUrl) {
+          allItems.push({
+            ...item,
+            projectId: project.id,
+            projectName: project.name
+          });
+        }
+      });
+    });
+
+    return allItems;
+  };
+
   // Handle creating review session
   const handleCreateReviewSession = async (expirationHours: number, maxViews: number) => {
     const token = generateShareToken();
 
+    let itemsToShare: BulkItem[];
+    let projectIdForSession: string | undefined;
+    let folderIdForSession: string | undefined;
+
+    // Check if sharing folder or project
+    if (currentFolderId) {
+      // Sharing folder - collect all items from all projects in folder
+      itemsToShare = collectItemsFromFolder(currentFolderId);
+      folderIdForSession = currentFolderId;
+      console.log(`[Share] Sharing folder ${currentFolderId} with ${itemsToShare.length} items from ${projects.filter(p => p.folderId === currentFolderId).length} projects`);
+    } else {
+      // Sharing single project
+      itemsToShare = items.map(item => ({
+        ...item,
+        reviewStatus: 'pending'
+      }));
+      projectIdForSession = activeProjectId || undefined;
+      console.log(`[Share] Sharing project with ${itemsToShare.length} items`);
+    }
+
+    if (itemsToShare.length === 0) {
+      toast.error('No items to share for review');
+      return;
+    }
+
     // Create review session in Supabase
     const result = await createReviewSession(
-      items.map(item => ({
+      itemsToShare.map(item => ({
         ...item,
         reviewStatus: 'pending'
       })),
       token,
       expirationHours,
       maxViews,
-      activeProjectId || undefined
+      projectIdForSession,
+      false, // isRereview
+      folderIdForSession
     );
 
     if (!result.success) {
@@ -1036,22 +1135,99 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       return;
     }
 
+    if (isSubmittingReview) {
+      return; // Prevent double submission
+    }
+
+    setIsSubmittingReview(true);
+    toast.loading('Submitting review...', { id: 'submit-review' });
+
     try {
       const result = await submitReviewResults(reviewMode.shareToken, items);
       if (result.success) {
-        toast.success('Review submitted successfully!');
-        // Optionally navigate away or show completion message
-        if (onCancel) {
-          setTimeout(() => onCancel(), 1500);
-        }
+        toast.success('Review submitted successfully!', { id: 'submit-review' });
+        // Set review as completed to show read-only mode
+        setReviewCompleted(true);
+        // Don't navigate away - stay to show results
+        // if (onCancel) {
+        //   setTimeout(() => onCancel(), 1500);
+        // }
       } else {
-        toast.error(result.error || 'Failed to submit review');
+        toast.error(result.error || 'Failed to submit review', { id: 'submit-review' });
       }
     } catch (error) {
       console.error('Error submitting review:', error);
-      toast.error('An error occurred while submitting the review');
+      toast.error('An error occurred while submitting the review', { id: 'submit-review' });
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
+
+  // Helper function to get review results for a specific item
+  const getReviewResultsForItem = useCallback((itemId: string): { status: 'approved' | 'rejected'; comment?: string; reviewedAt: string } | null => {
+    // Filter completed review sessions for current project or folder
+    const completedSessions = reviewSessions
+      .filter((s: any) => {
+        if (s.status !== 'completed') return false;
+        if (s.review_type === 'project') return s.project_id === activeProjectId;
+        if (s.review_type === 'folder') return s.folder_id === currentFolderId;
+        return false;
+      })
+      .sort((a: any, b: any) => {
+        // Sort by reviewed_at descending (most recent first)
+        const dateA = new Date(a.reviewed_at).getTime();
+        const dateB = new Date(b.reviewed_at).getTime();
+        return dateB - dateA;
+      });
+
+    // Find the most recent review for this specific item
+    for (const session of completedSessions) {
+      const reviewedItem = session.items?.find((i: any) => i.id === itemId);
+      if (reviewedItem?.reviewStatus && reviewedItem.reviewStatus !== 'pending') {
+        return {
+          status: reviewedItem.reviewStatus,
+          comment: reviewedItem.reviewComment,
+          reviewedAt: session.reviewed_at
+        };
+      }
+    }
+
+    return null;
+  }, [reviewSessions, activeProjectId, currentFolderId]);
+
+  // Auto-select first project in folder review mode
+  useEffect(() => {
+    if (reviewMode?.reviewType === 'folder' && items.length > 0 && !selectedReviewProjectId) {
+      const firstItem = items.find(item => item.projectId);
+      if (firstItem?.projectId) {
+        setSelectedReviewProjectId(firstItem.projectId);
+      }
+    }
+  }, [items, reviewMode?.reviewType, selectedReviewProjectId]);
+
+  // Load review sessions for creator
+  useEffect(() => {
+    if (!user || reviewMode?.isReviewMode) return;
+
+    const loadSessions = async () => {
+      try {
+        const result = await getMyReviewSessions();
+        if (result.success && result.sessions) {
+          console.log('[Review] Loaded sessions:', result.sessions.length);
+          setReviewSessions(result.sessions || []);
+        }
+      } catch (err) {
+        console.error('Review load error:', err);
+      }
+    };
+
+    loadSessions();
+    const intervalId = setInterval(loadSessions, 5000);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [user, reviewMode?.isReviewMode]);
 
   // Handle mode changes - apply to all selected if in selection mode
   const handleModeChange = (id: string, enabled: boolean) => {
@@ -2391,8 +2567,19 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   // Sorting Logic - Filter items by media type
   const filteredItems = (items || []).filter(item => {
-    if (!item.mediaType) return mediaType === 'image'; // Old items default to image
-    return item.mediaType === mediaType;
+    // Filter by media type
+    if (!item.mediaType) {
+      if (mediaType !== 'image') return false; // Old items default to image
+    } else if (item.mediaType !== mediaType) {
+      return false;
+    }
+
+    // Filter by project in review mode
+    if (reviewMode?.isReviewMode && reviewMode?.reviewType === 'folder' && selectedReviewProjectId) {
+      if (item.projectId !== selectedReviewProjectId) return false;
+    }
+
+    return true;
   });
 
   const sortedItems = [...(filteredItems || [])].sort((a, b) => {
@@ -2659,6 +2846,10 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                           setParentFolderIdForNewFolder(parentId);
                           setShowAddFolderDialog(true);
                         }}
+                        onShareFolder={(id) => {
+                          setCurrentFolderId(id);
+                          setShowShareForReviewDialog(true);
+                        }}
                         onSwitchProject={(id) => {
                           setCurrentFolderId(null);
                           switchActiveProject(id);
@@ -2686,6 +2877,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         onExportProject={handleExportProject}
                         onMoveProject={moveProjectToFolder}
                         onSelectFolder={setCurrentFolderId}
+                        reviewSessions={reviewSessions}
                       />
                     ))}
 
@@ -2723,6 +2915,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         onExport={handleExportProject}
                         onMove={moveProjectToFolder}
                         folders={folders}
+                        reviewSessions={reviewSessions}
                       />
                     ))}
 
@@ -2818,13 +3011,55 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               <div className="hidden md:flex items-center gap-2">
                 {reviewMode?.isReviewMode ? (
                   /* Review Mode Toolbar */
-                  <Button
-                    onClick={handleSubmitReview}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs"
-                  >
-                    <Check className="h-3.5 w-3.5 mr-2" />
-                    Submit Review
-                  </Button>
+                  <>
+                    {/* Project Filter for Folder Reviews */}
+                    {reviewMode?.reviewType === 'folder' && (() => {
+                      // Get unique projects from items
+                      const projectsInReview = items.reduce((acc: Array<{id: string, name: string, count: number}>, item) => {
+                        if (!item.projectId || !item.projectName) return acc;
+                        const existing = acc.find(p => p.id === item.projectId);
+                        if (existing) {
+                          existing.count++;
+                        } else {
+                          acc.push({ id: item.projectId, name: item.projectName, count: 1 });
+                        }
+                        return acc;
+                      }, []);
+
+                      return projectsInReview.length > 0 ? (
+                        <Select value={selectedReviewProjectId} onValueChange={setSelectedReviewProjectId}>
+                          <SelectTrigger className="h-8 text-xs w-[200px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {projectsInReview.map(project => (
+                              <SelectItem key={project.id} value={project.id}>
+                                {project.name} ({project.count})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : null;
+                    })()}
+
+                    <Button
+                      onClick={handleSubmitReview}
+                      disabled={isSubmittingReview}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSubmittingReview ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-3.5 w-3.5 mr-2" />
+                          Submit Review
+                        </>
+                      )}
+                    </Button>
+                  </>
                 ) : (
                   /* Normal Mode Toolbar */
                   <>
@@ -2890,16 +3125,58 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               </div>
 
               {/* Mobile Toolbar Buttons - Left */}
-              <div className="md:hidden flex items-center gap-2">
+              <div className="md:hidden flex items-center gap-2 flex-wrap">
                 {reviewMode?.isReviewMode ? (
                   /* Review Mode Mobile Toolbar */
-                  <Button
-                    onClick={handleSubmitReview}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs"
-                  >
-                    <Check className="h-3.5 w-3.5 mr-1" />
-                    Submit
-                  </Button>
+                  <>
+                    {/* Project Filter for Folder Reviews */}
+                    {reviewMode?.reviewType === 'folder' && (() => {
+                      // Get unique projects from items
+                      const projectsInReview = items.reduce((acc: Array<{id: string, name: string, count: number}>, item) => {
+                        if (!item.projectId || !item.projectName) return acc;
+                        const existing = acc.find(p => p.id === item.projectId);
+                        if (existing) {
+                          existing.count++;
+                        } else {
+                          acc.push({ id: item.projectId, name: item.projectName, count: 1 });
+                        }
+                        return acc;
+                      }, []);
+
+                      return projectsInReview.length > 0 ? (
+                        <Select value={selectedReviewProjectId} onValueChange={setSelectedReviewProjectId}>
+                          <SelectTrigger className="h-8 text-xs w-[180px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {projectsInReview.map(project => (
+                              <SelectItem key={project.id} value={project.id}>
+                                {project.name} ({project.count})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : null;
+                    })()}
+
+                    <Button
+                      onClick={handleSubmitReview}
+                      disabled={isSubmittingReview}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSubmittingReview ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-3.5 w-3.5 mr-1" />
+                          Submit
+                        </>
+                      )}
+                    </Button>
+                  </>
                 ) : (
                   /* Normal Mode Mobile Toolbar */
                   <>
@@ -3038,7 +3315,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       </div>
 
                       {/* Carousel Navigation */}
-                      {item.generatedImages && item.generatedImages.length > 1 && (
+                      {item.generatedImages && item.generatedImages.length > 1 && !reviewMode?.isReviewMode && (
                         <>
                           <Button
                             variant="ghost"
@@ -3093,28 +3370,30 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     </div>
 
                     {/* Action Buttons Below Image */}
-                    <div className="flex gap-2 px-0 py-2 mt-1">
-                      <button
-                        onClick={() => {
-                          setSelectionDialogItem(item);
-                          setCandidateUrls([]);
-                          setSelectedCandidateIndex(null);
-                          setNewCandidateUrl('');
-                        }}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors text-xs font-medium"
-                      >
-                        <Search className="h-4 w-4" />
-                        <span>Select</span>
-                      </button>
-                      <button
-                        onClick={() => handleRegenerateItem(item.id, { keywords: item.keywords })}
-                        disabled={item.status === 'processing' || !item.word}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium"
-                      >
-                        <RefreshCw className={`h-4 w-4 ${item.status === 'processing' ? 'animate-spin' : ''}`} />
-                        <span>Search</span>
-                      </button>
-                    </div>
+                    {!reviewMode?.isReviewMode && (
+                      <div className="flex gap-2 px-0 py-2 mt-1">
+                        <button
+                          onClick={() => {
+                            setSelectionDialogItem(item);
+                            setCandidateUrls([]);
+                            setSelectedCandidateIndex(null);
+                            setNewCandidateUrl('');
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors text-xs font-medium"
+                        >
+                          <Search className="h-4 w-4" />
+                          <span>Select</span>
+                        </button>
+                        <button
+                          onClick={() => handleRegenerateItem(item.id, { keywords: item.keywords })}
+                          disabled={item.status === 'processing' || !item.word}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${item.status === 'processing' ? 'animate-spin' : ''}`} />
+                          <span>Search</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3154,13 +3433,24 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         existingKeywords={item.keywords}
                         enableAI={item.isolated === false}
                         isolatedBackground={item.isolatedBackground}
-                        onAddKeyword={(keyword) => handleAddKeywordToItem(item.id, keyword)}
-                        onAddAllKeywords={(keywords) => handleAddAllKeywordsToItem(item.id, keywords)}
-                        onKeywordsGenerated={(keywords) => handleKeywordsChange(item.id, keywords)}
-                        onRegenerateImage={item.imageUrl ? () => handleRegenerateItem(item.id, { keywords: item.keywords }) : undefined}
-                        onIsolatedBackgroundChange={(value) => handleIsolatedBgChange(item.id, value)}
-                        onModeChange={(enabled) => handleModeChange(item.id, enabled)}
+                        onAddKeyword={reviewMode?.isReviewMode ? undefined : (keyword) => handleAddKeywordToItem(item.id, keyword)}
+                        onAddAllKeywords={reviewMode?.isReviewMode ? undefined : (keywords) => handleAddAllKeywordsToItem(item.id, keywords)}
+                        onKeywordsGenerated={reviewMode?.isReviewMode ? undefined : (keywords) => handleKeywordsChange(item.id, keywords)}
+                        onRegenerateImage={reviewMode?.isReviewMode ? undefined : (item.imageUrl ? () => handleRegenerateItem(item.id, { keywords: item.keywords }) : undefined)}
+                        onIsolatedBackgroundChange={reviewMode?.isReviewMode ? undefined : (value) => handleIsolatedBgChange(item.id, value)}
+                        onModeChange={reviewMode?.isReviewMode ? undefined : (enabled) => handleModeChange(item.id, enabled)}
                       />
+                      {/* Review Results Display */}
+                      {!reviewMode?.isReviewMode && (() => {
+                        const reviewResults = getReviewResultsForItem(item.id);
+                        return reviewResults ? (
+                          <ReviewResultsDisplay
+                            reviewStatus={reviewResults.status}
+                            reviewComment={reviewResults.comment}
+                            reviewedAt={reviewResults.reviewedAt}
+                          />
+                        ) : null;
+                      })()}
                     </div>
                   )}
 
@@ -3173,36 +3463,90 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       className="bg-slate-50 border-0 focus:bg-slate-100 focus:border-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 transition-all placeholder:text-slate-400 text-sm"
                     />
                   </div>
+
+                  {/* Review Controls (Mobile) */}
+                  {reviewMode?.isReviewMode && (
+                    <div className="pt-4 space-y-3 border-t border-slate-200 mt-4">
+                      {(reviewMode.isReadOnly || reviewCompleted) ? (
+                        // Read-only mode: Show review results
+                        <ReviewResultsDisplay
+                          reviewStatus={item.reviewStatus}
+                          reviewComment={item.reviewComment}
+                        />
+                      ) : (
+                        // Active review mode: Show approve/reject buttons
+                        <>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant={item.reviewStatus === 'approved' ? 'default' : 'outline'}
+                              className={`h-9 text-xs flex-1 ${
+                                item.reviewStatus === 'approved'
+                                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                                  : 'hover:bg-green-50 hover:border-green-600 hover:text-green-700'
+                              }`}
+                              onClick={() => handleInputChange(item.id, 'reviewStatus', 'approved')}
+                            >
+                              <Check className="h-3.5 w-3.5 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={item.reviewStatus === 'rejected' ? 'default' : 'outline'}
+                              className={`h-9 text-xs flex-1 ${
+                                item.reviewStatus === 'rejected'
+                                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                                  : 'hover:bg-red-50 hover:border-red-600 hover:text-red-700'
+                              }`}
+                              onClick={() => handleInputChange(item.id, 'reviewStatus', 'rejected')}
+                            >
+                              <X className="h-3.5 w-3.5 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                          <Textarea
+                            placeholder="Add review comment..."
+                            value={item.reviewComment || ''}
+                            onChange={(e) => handleInputChange(item.id, 'reviewComment', e.target.value)}
+                            className="text-xs min-h-[60px] resize-none"
+                            rows={2}
+                          />
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        {/* Mobile Bottom - Search Items Button */}
-        <div className="md:hidden sticky bottom-0 z-10 p-4 bg-white border-t border-slate-200">
-          <Button
-             onClick={handleExtractImages}
-             className="bg-slate-800 hover:bg-slate-900 text-white w-full h-11"
-             disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
-          >
-             {(() => {
-               const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
-               return count > 0 ? `Search ${count} items` : 'Search items';
-             })()}
-          </Button>
-          {isSelectionMode && selectedIds.size > 0 && (
-            <div className="flex gap-2 mt-2">
-              <Badge variant="secondary" className="flex-1 justify-center bg-slate-100 text-slate-700 border-slate-200 h-9 px-3">
-                {selectedIds.size} selected
-              </Badge>
-              <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-9">
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete ({selectedIds.size})
-              </Button>
-            </div>
-          )}
-        </div>
+        {/* Mobile Bottom - Search Items Button (only in normal mode) */}
+        {!reviewMode?.isReviewMode && (
+          <div className="md:hidden sticky bottom-0 z-10 p-4 bg-white border-t border-slate-200">
+            <Button
+               onClick={handleExtractImages}
+               className="bg-slate-800 hover:bg-slate-900 text-white w-full h-11"
+               disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
+            >
+               {(() => {
+                 const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
+                 return count > 0 ? `Search ${count} items` : 'Search items';
+               })()}
+            </Button>
+            {isSelectionMode && selectedIds.size > 0 && (
+              <div className="flex gap-2 mt-2">
+                <Badge variant="secondary" className="flex-1 justify-center bg-slate-100 text-slate-700 border-slate-200 h-9 px-3">
+                  {selectedIds.size} selected
+                </Badge>
+                <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-9">
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete ({selectedIds.size})
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Scrollable Table Container - Desktop */}
         <div className="flex-1 overflow-y-auto -mt-6 hidden md:block">
@@ -3311,7 +3655,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                   </div>
 
                                   {/* Carousel Navigation */}
-                                  {item.generatedImages && item.generatedImages.length > 1 && (
+                                  {item.generatedImages && item.generatedImages.length > 1 && !reviewMode?.isReviewMode && (
                                     <>
                                       <Button
                                         variant="ghost"
@@ -3392,7 +3736,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                            </div>
 
                            {/* 이미지 우측 세로 아이콘 버튼 */}
-                           {item.imageUrl && (
+                           {item.imageUrl && !reviewMode?.isReviewMode && (
                              <div className="flex flex-col justify-between items-center self-stretch">
                                {/* 상단 그룹 */}
                                <div className="flex flex-col gap-1 items-center">
@@ -3521,16 +3865,27 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                 existingKeywords={item.keywords}
                                 enableAI={item.isolated === false}
                                 isolatedBackground={item.isolatedBackground}
-                                onAddKeyword={(keyword) => handleAddKeywordToItem(item.id, keyword)}
-                                onAddAllKeywords={(keywords) => handleAddAllKeywordsToItem(item.id, keywords)}
-                                onKeywordsGenerated={(keywords) => handleKeywordsChange(item.id, keywords)}
-                                onRegenerateImage={item.imageUrl ? () => {
+                                onAddKeyword={reviewMode?.isReviewMode ? undefined : (keyword) => handleAddKeywordToItem(item.id, keyword)}
+                                onAddAllKeywords={reviewMode?.isReviewMode ? undefined : (keywords) => handleAddAllKeywordsToItem(item.id, keywords)}
+                                onKeywordsGenerated={reviewMode?.isReviewMode ? undefined : (keywords) => handleKeywordsChange(item.id, keywords)}
+                                onRegenerateImage={reviewMode?.isReviewMode ? undefined : (item.imageUrl ? () => {
                                   // Use the current item's keywords directly from render
                                   handleRegenerateItem(item.id, { keywords: item.keywords });
-                                } : undefined}
-                                onIsolatedBackgroundChange={(value) => handleIsolatedBgChange(item.id, value)}
-                                onModeChange={(enabled) => handleModeChange(item.id, enabled)}
+                                } : undefined)}
+                                onIsolatedBackgroundChange={reviewMode?.isReviewMode ? undefined : (value) => handleIsolatedBgChange(item.id, value)}
+                                onModeChange={reviewMode?.isReviewMode ? undefined : (enabled) => handleModeChange(item.id, enabled)}
                               />
+                              {/* Review Results Display */}
+                              {!reviewMode?.isReviewMode && (() => {
+                                const reviewResults = getReviewResultsForItem(item.id);
+                                return reviewResults ? (
+                                  <ReviewResultsDisplay
+                                    reviewStatus={reviewResults.status}
+                                    reviewComment={reviewResults.comment}
+                                    reviewedAt={reviewResults.reviewedAt}
+                                  />
+                                ) : null;
+                              })()}
                               </div>
                             </div>
                           )}
@@ -3553,55 +3908,53 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     </TableCell>
                     {reviewMode?.isReviewMode && (
                       <TableCell className="align-top pt-4 w-[280px]">
-                        <div className="space-y-2">
-                          <div className="flex gap-1.5">
-                            <Button
-                              size="sm"
-                              variant={item.reviewStatus === 'approved' ? 'default' : 'outline'}
-                              className={`h-7 text-xs flex-1 ${
-                                item.reviewStatus === 'approved'
-                                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                                  : 'hover:bg-green-50 hover:border-green-600 hover:text-green-700'
-                              }`}
-                              onClick={() => handleInputChange(item.id, 'reviewStatus', 'approved')}
-                            >
-                              <Check className="h-3 w-3 mr-1" />
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={item.reviewStatus === 'rejected' ? 'default' : 'outline'}
-                              className={`h-7 text-xs flex-1 ${
-                                item.reviewStatus === 'rejected'
-                                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                                  : 'hover:bg-red-50 hover:border-red-600 hover:text-red-700'
-                              }`}
-                              onClick={() => handleInputChange(item.id, 'reviewStatus', 'rejected')}
-                            >
-                              <X className="h-3 w-3 mr-1" />
-                              Reject
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={item.reviewStatus === 'pending' ? 'default' : 'outline'}
-                              className={`h-7 text-xs flex-1 ${
-                                item.reviewStatus === 'pending'
-                                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                                  : 'hover:bg-amber-50 hover:border-amber-600 hover:text-amber-700'
-                              }`}
-                              onClick={() => handleInputChange(item.id, 'reviewStatus', 'pending')}
-                            >
-                              Pending
-                            </Button>
-                          </div>
-                          <Textarea
-                            placeholder="Add review comment..."
-                            value={item.reviewComment || ''}
-                            onChange={(e) => handleInputChange(item.id, 'reviewComment', e.target.value)}
-                            className="text-xs min-h-[60px] resize-none"
-                            rows={2}
+                        {(reviewMode.isReadOnly || reviewCompleted) ? (
+                          // Read-only mode: Show review results
+                          <ReviewResultsDisplay
+                            reviewStatus={item.reviewStatus}
+                            reviewComment={item.reviewComment}
+                            compact={true}
                           />
-                        </div>
+                        ) : (
+                          // Active review mode: Show approve/reject buttons
+                          <div className="space-y-2">
+                            <div className="flex gap-1.5">
+                              <Button
+                                size="sm"
+                                variant={item.reviewStatus === 'approved' ? 'default' : 'outline'}
+                                className={`h-7 text-xs flex-1 ${
+                                  item.reviewStatus === 'approved'
+                                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                                    : 'hover:bg-green-50 hover:border-green-600 hover:text-green-700'
+                                }`}
+                                onClick={() => handleInputChange(item.id, 'reviewStatus', 'approved')}
+                              >
+                                <Check className="h-3 w-3 mr-1" />
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={item.reviewStatus === 'rejected' ? 'default' : 'outline'}
+                                className={`h-7 text-xs flex-1 ${
+                                  item.reviewStatus === 'rejected'
+                                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                                    : 'hover:bg-red-50 hover:border-red-600 hover:text-red-700'
+                                }`}
+                                onClick={() => handleInputChange(item.id, 'reviewStatus', 'rejected')}
+                              >
+                                <X className="h-3 w-3 mr-1" />
+                                Reject
+                              </Button>
+                            </div>
+                            <Textarea
+                              placeholder="Add review comment..."
+                              value={item.reviewComment || ''}
+                              onChange={(e) => handleInputChange(item.id, 'reviewComment', e.target.value)}
+                              className="text-xs min-h-[60px] resize-none"
+                              rows={2}
+                            />
+                          </div>
+                        )}
                       </TableCell>
                     )}
                  </TableRow>

@@ -19,8 +19,12 @@ export function ReviewModeWrapper() {
     creator_user_id: string;
     items: BulkItem[];
     share_token: string;
+    review_type?: 'project' | 'folder';
+    is_rereview?: boolean;
+    status?: 'pending' | 'in-review' | 'completed';
   } | null>(null);
   const [items, setItems] = useState<BulkItem[]>([]);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
   // Check authentication on mount
   useEffect(() => {
@@ -31,10 +35,13 @@ export function ReviewModeWrapper() {
     try {
       // Load review session first (no login required for public review links)
       if (!token) {
+        console.error('[ReviewMode] No token provided');
         toast.error('Invalid review link');
         navigate('/');
         return;
       }
+
+      console.log('[ReviewMode] Loading review session for token:', token);
 
       const reviewPromise = loadReviewSession(token);
       const reviewTimeoutPromise = new Promise<any>((_, reject) =>
@@ -43,12 +50,16 @@ export function ReviewModeWrapper() {
 
       const result = await Promise.race([reviewPromise, reviewTimeoutPromise]);
 
+      console.log('[ReviewMode] Load result:', result);
+
       if (!result.success || !result.session) {
+        console.error('[ReviewMode] Failed to load session:', result.error);
         toast.error(result.error || 'Failed to load review session');
         navigate('/');
         return;
       }
 
+      console.log('[ReviewMode] Session loaded successfully:', result.session.id);
       setReviewSession(result.session);
       setItems(result.session.items);
 
@@ -158,13 +169,35 @@ export function ReviewModeWrapper() {
     );
   }
 
+  // Show thank you page after submission
+  if (reviewSubmitted) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-indigo-50 to-purple-50">
+        <div className="max-w-md w-full mx-4 bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div className="flex items-center justify-center w-16 h-16 mx-auto mb-6 bg-green-100 rounded-full">
+            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-bold text-slate-800 mb-4">Thank You!</h1>
+          <p className="text-slate-600 mb-8">
+            Your review has been successfully submitted to the creator. They will receive your feedback shortly.
+          </p>
+          <p className="text-sm text-slate-500">
+            You can now close this page.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <BulkGenerator
       items={items}
       setItems={setItems}
       onDelete={() => {}} // Disabled in review mode
       onGenerate={() => {}} // Disabled in review mode
-      onCancel={() => navigate('/')}
+      onCancel={() => setReviewSubmitted(true)}
       userPlan={user?.plan || 'free'}
       credits={0}
       onUpgrade={() => {}}
@@ -176,13 +209,27 @@ export function ReviewModeWrapper() {
       duplicateProject={() => {}}
       deleteProject={() => {}}
       switchActiveProject={() => {}}
+      folders={[]}
+      expandedFolders={new Set()}
+      addFolder={() => {}}
+      renameFolder={() => {}}
+      deleteFolder={() => {}}
+      moveProjectToFolder={() => {}}
+      toggleFolderExpanded={() => {}}
+      currentFolderId={null}
+      setCurrentFolderId={() => {}}
       user={user}
       onShowLogin={() => setShowLogin(true)}
       onLogout={handleLogout}
       reviewMode={{
         isReviewMode: true,
         shareToken: reviewSession.share_token,
-        creatorId: reviewSession.creator_user_id
+        creatorId: reviewSession.creator_user_id,
+        isReadOnly: reviewSession.status === 'completed',
+        isRereview: reviewSession.is_rereview ||
+                    (reviewSession.items && reviewSession.items.length > 0 &&
+                     reviewSession.items.some((item: any) => item.previousReviewStatus)) || false,
+        reviewType: reviewSession.review_type || 'project'
       }}
     />
   );
