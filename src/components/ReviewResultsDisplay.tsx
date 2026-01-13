@@ -83,33 +83,6 @@ export function ReviewResultsDisplay({
         </p>
       )}
 
-      {/* Action Buttons */}
-      {(onComplete || onRequestReReview) && (
-        <div className="flex gap-1 mt-3 pt-2 border-t border-slate-200">
-          {onComplete && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-green-600 hover:text-green-700 hover:bg-green-50"
-              onClick={onComplete}
-            >
-              <CheckCircle className="h-3 w-3 mr-1" />
-              처리완료
-            </Button>
-          )}
-          {reviewStatus === 'rejected' && onRequestReReview && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-              onClick={onRequestReReview}
-            >
-              <RotateCcw className="h-3 w-3 mr-1" />
-              재요청
-            </Button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

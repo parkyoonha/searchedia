@@ -78,7 +78,8 @@ import {
   FolderOpen,
   FolderPlus,
   File,
-  EyeOff
+  EyeOff,
+  RotateCcw
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
@@ -774,7 +775,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       // Project switched: set mediaType based on first available item type
       const firstItem = items.find(item => item.mediaType);
       if (firstItem) {
-        console.log('[BulkGenerator] Project switched, setting mediaType to:', firstItem.mediaType);
         setMediaType(firstItem.mediaType);
       } else {
         // If no items have mediaType, default to image
@@ -883,6 +883,12 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   const [reviewFilter, setReviewFilter] = useState<'all' | 'approved' | 'rejected'>('all');
   const [hideAllReviews, setHideAllReviews] = useState(false);
   const [reviewMediaFilter, setReviewMediaFilter] = useState<'image' | 'video' | null>(null);
+
+  // Reset review filter when switching projects
+  useEffect(() => {
+    setReviewFilter('all');
+    setReviewMediaFilter(null);
+  }, [activeProjectId]);
 
   // Confirm Complete Dialog
   const [showConfirmComplete, setShowConfirmComplete] = useState(false);
@@ -1254,6 +1260,16 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   // Helper function to get review results for a specific item
   const getReviewResultsForItem = useCallback((itemId: string): { status: 'approved' | 'rejected'; comment?: string; reviewedAt: string } | null => {
+    // First, check if the item itself has review data (from folder reviews applied to projects)
+    const item = items.find(i => i.id === itemId);
+    if (item?.reviewStatus && item.reviewStatus !== 'pending') {
+      return {
+        status: item.reviewStatus,
+        comment: item.reviewComment,
+        reviewedAt: new Date().toISOString() // Use current time as fallback
+      };
+    }
+
     // Get current project's folder ID if viewing a project
     const currentProject = projects.find(p => p.id === activeProjectId);
     const projectFolderId = currentProject?.folderId;
@@ -1294,7 +1310,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     }
 
     return null;
-  }, [reviewSessions, activeProjectId, currentFolderId, projects]);
+  }, [items, reviewSessions, activeProjectId, currentFolderId, projects]);
 
   // Handler: Open confirm complete dialog
   const handleRequestComplete = (itemId: string) => {
@@ -1468,6 +1484,33 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       console.error('Folder re-request error:', error);
       toast.error('폴더 재요청 생성 중 오류가 발생했습니다');
     }
+  };
+
+  // Handler: Bulk complete all reviewed items (approved + rejected)
+  const handleBulkCompleteApproved = () => {
+    const reviewedItems = items.filter(item =>
+      (item.reviewStatus === 'approved' || item.reviewStatus === 'rejected') && !item.reviewCompleted
+    );
+
+    if (reviewedItems.length === 0) {
+      toast.error('확인 완료할 리뷰 아이템이 없습니다');
+      return;
+    }
+
+    setItems(prev => prev.map(item => {
+      if ((item.reviewStatus === 'approved' || item.reviewStatus === 'rejected') && !item.reviewCompleted) {
+        return {
+          ...item,
+          reviewCompleted: true,
+          reviewCompletedAt: Date.now(),
+          reviewStatus: undefined,
+          reviewComment: undefined
+        };
+      }
+      return item;
+    }));
+
+    toast.success(`${reviewedItems.length}개의 아이템이 처리 완료되었습니다`);
   };
 
   // Auto-select first project in folder review mode
@@ -2860,16 +2903,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     return true;
   });
 
-  // Debug logging for filtered items
-  useEffect(() => {
-    console.log('[BulkGenerator] Items filtered:', {
-      totalItems: items.length,
-      filteredItems: filteredItems.length,
-      mediaType,
-      reviewMode: reviewMode?.isReviewMode,
-      activeProjectId
-    });
-  }, [items.length, filteredItems.length, mediaType, reviewMode?.isReviewMode, activeProjectId]);
 
   const sortedItems = [...(filteredItems || [])].sort((a, b) => {
     if (sortBy === 'word-asc') return a.word.localeCompare(b.word);
@@ -3927,31 +3960,88 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
           ))}
         </div>
 
-        {/* Mobile Bottom - Search Items Button (only in normal mode) */}
+        {/* Mobile Bottom - Search Items Button OR Review Filter (only in normal mode) */}
         {!reviewMode?.isReviewMode && (
-          <div className="md:hidden sticky bottom-0 z-10 p-4 bg-white border-t border-slate-200">
-            <Button
-               onClick={handleExtractImages}
-               className="bg-slate-800 hover:bg-slate-900 text-white w-full h-11"
-               disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
-            >
-               {(() => {
-                 const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
-                 return count > 0 ? `Search ${count} items` : 'Search items';
-               })()}
-            </Button>
-            {isSelectionMode && selectedIds.size > 0 && (
-              <div className="flex gap-2 mt-2">
-                <Badge variant="secondary" className="flex-1 justify-center bg-slate-100 text-slate-700 border-slate-200 h-9 px-3">
-                  {selectedIds.size} selected
-                </Badge>
-                <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-9">
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Delete ({selectedIds.size})
+          <>
+            {/* Show Search button when no reviews exist */}
+            {!(reviewCounts.approved > 0 || reviewCounts.rejected > 0) && (
+              <div className="md:hidden sticky bottom-0 z-10 p-4 bg-white border-t border-slate-200">
+                <Button
+                   onClick={handleExtractImages}
+                   className="bg-slate-800 hover:bg-slate-900 text-white w-full h-11"
+                   disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
+                >
+                   {(() => {
+                     const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
+                     return count > 0 ? `Search ${count} items` : 'Search items';
+                   })()}
                 </Button>
+                {isSelectionMode && selectedIds.size > 0 && (
+                  <div className="flex gap-2 mt-2">
+                    <Badge variant="secondary" className="flex-1 justify-center bg-slate-100 text-slate-700 border-slate-200 h-9 px-3">
+                      {selectedIds.size} selected
+                    </Badge>
+                    <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-9">
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete ({selectedIds.size})
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
-          </div>
+
+            {/* Show Review Filter Bar when reviews exist */}
+            {(reviewCounts.approved > 0 || reviewCounts.rejected > 0) && (
+              <div className="md:hidden sticky bottom-0 z-10 bg-white border-t border-slate-200">
+                {/* Filter Tabs */}
+                <div className="px-4 pt-3 pb-2 flex gap-2">
+                  <Button
+                    variant={reviewFilter === 'all' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setReviewFilter('all')}
+                    className="flex-1"
+                  >
+                    전체 ({items.length})
+                  </Button>
+                  {reviewCounts.rejected > 0 && (
+                    <Button
+                      variant={reviewFilter === 'rejected' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setReviewFilter('rejected')}
+                      className={`flex-1 ${reviewFilter === 'rejected' ? '' : 'text-red-600 hover:text-red-700 hover:bg-red-50'}`}
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      거부됨 ({reviewCounts.rejected})
+                    </Button>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="px-4 pb-3 flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkCompleteApproved}
+                    className="flex-1 text-green-600 hover:text-green-700 hover:bg-green-50 h-10"
+                  >
+                    <Check className="h-4 w-4 mr-1" />
+                    일괄 확인 완료 ({reviewCounts.approved + reviewCounts.rejected})
+                  </Button>
+                  {reviewCounts.rejected > 0 && reviewFilter === 'rejected' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRequestReReviewAll}
+                      className="flex-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-10"
+                    >
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                      거부 건 재요청 ({reviewCounts.rejected})
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Scrollable Table Container - Desktop */}
@@ -4398,24 +4488,8 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         {!reviewMode?.isReviewMode && (reviewCounts.approved > 0 || reviewCounts.rejected > 0) && (
           <div className={`fixed bottom-0 right-0 z-30 bg-white border-t border-slate-200 shadow-lg transition-all duration-300 ${desktopSidebarOpen ? 'left-64' : 'left-0'}`} style={{ height: '64px' }}>
             <div className="h-full px-4 flex items-center justify-between gap-4">
-              {/* Left Side: Hide Toggle + Filter Tabs */}
+              {/* Left Side: Filter Tabs */}
               <div className="flex gap-2 items-center flex-wrap">
-                {/* Hide All Reviews Toggle */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setHideAllReviews(!hideAllReviews);
-                    toast.success(hideAllReviews ? '리뷰 결과가 다시 표시됩니다' : '모든 리뷰 결과가 숨겨졌습니다');
-                  }}
-                  className={hideAllReviews ? 'bg-slate-100' : ''}
-                >
-                  <EyeOff className="h-4 w-4 mr-2" />
-                  {hideAllReviews ? '숨김 해제' : '전체 숨김'}
-                </Button>
-
-                {/* Filter Tabs */}
-                <div className="h-6 w-px bg-slate-300" />
                 <Button
                   variant={reviewFilter === 'all' ? 'default' : 'outline'}
                   size="sm"
@@ -4423,17 +4497,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                 >
                   전체 ({items.length})
                 </Button>
-                {reviewCounts.approved > 0 && (
-                  <Button
-                    variant={reviewFilter === 'approved' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setReviewFilter('approved')}
-                    className={reviewFilter === 'approved' ? '' : 'text-green-600 hover:text-green-700 hover:bg-green-50'}
-                  >
-                    <Check className="h-4 w-4 mr-1" />
-                    승인됨 ({reviewCounts.approved})
-                  </Button>
-                )}
                 {reviewCounts.rejected > 0 && (
                   <Button
                     variant={reviewFilter === 'rejected' ? 'default' : 'outline'}
@@ -4448,17 +4511,30 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               </div>
 
               {/* Right Side: Bulk Actions */}
-              {reviewCounts.rejected > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRequestReReviewAll}
-                  className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                >
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  거부 건 재요청 ({reviewCounts.rejected})
-                </Button>
-              )}
+              <div className="flex gap-2">
+                {(reviewCounts.approved > 0 || reviewCounts.rejected > 0) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkCompleteApproved}
+                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    일괄 확인 완료 ({reviewCounts.approved + reviewCounts.rejected})
+                  </Button>
+                )}
+                {reviewCounts.rejected > 0 && reviewFilter === 'rejected' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRequestReReviewAll}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    거부 건 재요청 ({reviewCounts.rejected})
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

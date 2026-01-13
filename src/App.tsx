@@ -350,18 +350,6 @@ export default function App() {
   const activeProject = projects.find(p => p.id === activeProjectId);
   const activeItems = activeProject?.items || [];
 
-  // Debug logging
-  useEffect(() => {
-    if (activeProjectId) {
-      console.log('[App] Active project changed:', {
-        projectId: activeProjectId,
-        projectName: activeProject?.name,
-        itemsCount: activeItems.length,
-        folderId: activeProject?.folderId
-      });
-    }
-  }, [activeProjectId, activeProject, activeItems.length]);
-
   // Ensure activeItems is always an array
   if (!Array.isArray(activeItems)) {
     console.error('[App] activeItems is not an array:', activeItems);
@@ -740,31 +728,43 @@ export default function App() {
 
         console.log('[App] Applying review results to', reviewItemsByProject.size, 'projects');
 
-        // Update projects with review results
-        setProjects(prev => prev.map(project => {
-          const reviewItems = reviewItemsByProject.get(project.id);
-          if (!reviewItems || reviewItems.size === 0) return project;
+        // Update projects with review results (only if changes are needed)
+        setProjects(prev => {
+          let hasChanges = false;
+          const updated = prev.map(project => {
+            const reviewItems = reviewItemsByProject.get(project.id);
+            if (!reviewItems || reviewItems.size === 0) return project;
 
-          // Apply review results to matching items
-          const updatedItems = project.items.map(item => {
-            const reviewData = reviewItems.get(item.id);
-            if (reviewData) {
+            // Apply review results to matching items
+            const updatedItems = project.items.map(item => {
+              const reviewData = reviewItems.get(item.id);
+              // Only update if the review status is different
+              if (reviewData && item.reviewStatus !== reviewData.reviewStatus) {
+                hasChanges = true;
+                return {
+                  ...item,
+                  reviewStatus: reviewData.reviewStatus,
+                  reviewComment: reviewData.reviewComment
+                };
+              }
+              return item;
+            });
+
+            if (hasChanges) {
               return {
-                ...item,
-                reviewStatus: reviewData.reviewStatus,
-                reviewComment: reviewData.reviewComment
+                ...project,
+                items: updatedItems
               };
             }
-            return item;
+            return project;
           });
 
-          return {
-            ...project,
-            items: updatedItems
-          };
-        }));
-
-        console.log('[App] Review results applied successfully');
+          if (hasChanges) {
+            console.log('[App] Review results applied successfully');
+            return updated;
+          }
+          return prev; // Return previous state if no changes
+        });
       } catch (error) {
         console.error('[App] Error applying folder reviews:', error);
       }
