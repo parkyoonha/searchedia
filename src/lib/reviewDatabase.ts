@@ -146,12 +146,18 @@ export async function loadReviewSession(shareToken: string): Promise<{
       return { success: false, error: 'This review link has expired' };
     }
 
-    // Check view count
+    // If session is already completed, just return it without modifying anything
+    // This preserves the submitted review results
+    if (data.status === 'completed') {
+      return { success: true, session: data };
+    }
+
+    // For non-completed sessions, check view count limit
     if (data.view_count >= data.max_views) {
       return { success: false, error: 'This review link has reached its maximum view limit' };
     }
 
-    // Increment view count
+    // Increment view count and set status to 'in-review' (only for pending sessions)
     const updateUrl = `${supabaseUrl}/rest/v1/review_sessions?id=eq.${data.id}`;
     await fetch(updateUrl, {
       method: 'PATCH',

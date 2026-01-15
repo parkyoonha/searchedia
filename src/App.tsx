@@ -356,16 +356,21 @@ export default function App() {
   }
 
   const updateActiveProjectItems = (newItems: BulkItem[] | ((prev: BulkItem[]) => BulkItem[])) => {
-    if (!activeProjectId) return;
-    setProjects(prevProjects =>
-      prevProjects.map(p => {
+    if (!activeProjectId) {
+      console.log('[App] No activeProjectId, returning');
+      return;
+    }
+
+    setProjects(prevProjects => {
+      const result = prevProjects.map(p => {
         if (p.id === activeProjectId) {
           const updatedItems = typeof newItems === 'function' ? newItems(p.items) : newItems;
           return { ...p, items: updatedItems };
         }
         return p;
-      })
-    );
+      });
+      return result;
+    });
   };
 
   const handleConsumeCredits = (amount: number) => {

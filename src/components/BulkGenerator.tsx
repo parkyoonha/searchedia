@@ -31,7 +31,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription
+  DialogDescription,
+  DialogFooter
 } from './ui/dialog';
 import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
@@ -79,7 +80,8 @@ import {
   FolderPlus,
   File,
   EyeOff,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
@@ -468,24 +470,31 @@ function ShareForReviewDialog({ open, onOpenChange, reviewLink, onCreateSession 
 }
 
 // Folder Tree Item Component
-function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeProjectId, level, currentFolderId, onToggleExpand, onRenameFolder, onDeleteFolder, onAddSubfolder, onShareFolder, onSwitchProject, onRenameProject, onDuplicateProject, onDeleteProject, onShareProject, onExportProject, onMoveProject, onSelectFolder, reviewSessions, onRequestFolderReReview }: any) {
+function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeProjectId, level, currentFolderId, onToggleExpand, onRenameFolder, onDeleteFolder, onAddSubfolder, onShareFolder, onSwitchProject, onRenameProject, onDuplicateProject, onDeleteProject, onShareProject, onExportProject, onMoveProject, onSelectFolder, reviewSessions, onRequestFolderReReview, getReviewResultsForItem }: any) {
   const isExpanded = expandedFolders.has(folder.id);
   const isSelected = currentFolderId === folder.id;
   const childFolders = allFolders.filter((f: any) => f.parentId === folder.id);
   const childProjects = projects.filter((p: any) => p.folderId === folder.id);
   const FolderIcon = isExpanded ? FolderOpen : Folder;
 
-  // Check if folder has completed reviews
-  const completedReviews = reviewSessions?.filter((session: any) =>
-    session.status === 'completed' && session.folder_id === folder.id
-  ) || [];
-  const hasNewReview = completedReviews.length > 0;
+  // Check if folder has any items with pending reviews (not completed)
+  // Pass project.id to check review results for each specific project
+  const hasAnyReviewResults = childProjects.some((project: any) =>
+    project.items.some((item: any) => {
+      if (item.reviewCompleted || item.reviewHidden) return false;
+      const reviewResult = getReviewResultsForItem(item.id, project.id);
+      return reviewResult !== null;
+    })
+  );
 
   // Count rejected items in folder
+  // Pass project.id to check review results for each specific project
   const rejectedCount = childProjects.reduce((count: number, project: any) => {
-    return count + project.items.filter((item: any) =>
-      item.reviewStatus === 'rejected' && !item.reviewCompleted
-    ).length;
+    return count + project.items.filter((item: any) => {
+      if (item.reviewCompleted || item.reviewHidden) return false;
+      const reviewResult = getReviewResultsForItem(item.id, project.id);
+      return reviewResult && reviewResult.status === 'rejected';
+    }).length;
   }, 0);
 
   return (
@@ -560,12 +569,12 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
         >
           <FolderIcon className="h-3.5 w-3.5 text-slate-500" />
           <span className="text-xs text-slate-700 font-medium">{folder.name}</span>
-          {hasNewReview && (
+          {hasAnyReviewResults && (
             <Badge
               variant="secondary"
-              className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[9px] px-1.5 h-4 font-medium"
+              className="bg-blue-100 text-blue-700 border-blue-200 text-[9px] px-1.5 h-4 font-medium"
             >
-              {completedReviews.length} Review{completedReviews.length > 1 ? 's' : ''}
+              Review
             </Badge>
           )}
         </div>
@@ -598,6 +607,7 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
               onSelectFolder={onSelectFolder}
               reviewSessions={reviewSessions}
               onRequestFolderReReview={onRequestFolderReReview}
+              getReviewResultsForItem={getReviewResultsForItem}
             />
           ))}
 
@@ -616,6 +626,7 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
               onMove={onMoveProject}
               folders={allFolders}
               reviewSessions={reviewSessions}
+              getReviewResultsForItem={getReviewResultsForItem}
             />
           ))}
         </>
@@ -625,12 +636,14 @@ function FolderTreeItem({ folder, allFolders, projects, expandedFolders, activeP
 }
 
 // Project Tree Item Component
-function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDuplicate, onDelete, onShare, onExport, onMove, folders, reviewSessions }: any) {
-  // Check if project has completed reviews
-  const completedReviews = reviewSessions?.filter((session: any) =>
-    session.status === 'completed' && session.project_id === project.id
-  ) || [];
-  const hasNewReview = completedReviews.length > 0;
+function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDuplicate, onDelete, onShare, onExport, onMove, folders, reviewSessions, getReviewResultsForItem }: any) {
+  // Check if project has any items with pending reviews (not completed)
+  // Pass project.id to check review results for this specific project (not just active project)
+  const hasAnyReviewResults = project.items.some((item: any) => {
+    if (item.reviewCompleted || item.reviewHidden) return false;
+    const reviewResult = getReviewResultsForItem(item.id, project.id);
+    return reviewResult !== null;
+  });
 
   return (
     <div
@@ -638,7 +651,7 @@ function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDupli
         isActive
           ? 'bg-white border border-slate-300 shadow-sm'
           : 'hover:bg-slate-50'
-      } ${hasNewReview ? 'border-indigo-200' : ''}`}
+      } ${hasAnyReviewResults ? 'border-indigo-200' : ''}`}
       style={{ paddingLeft: `${level * 12 + 28}px` }}
     >
       {/* Menu dropdown - now visible and clickable */}
@@ -719,12 +732,12 @@ function ProjectTreeItem({ project, isActive, level, onSwitch, onRename, onDupli
         <span className={`text-xs ${isActive ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
           {project.name}
         </span>
-        {hasNewReview && (
+        {hasAnyReviewResults && (
           <Badge
             variant="secondary"
-            className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[9px] px-1.5 h-4 font-medium"
+            className="bg-blue-100 text-blue-700 border-blue-200 text-[9px] px-1.5 h-4 font-medium"
           >
-            {completedReviews.length} Review{completedReviews.length > 1 ? 's' : ''}
+            Review
           </Badge>
         )}
       </div>
@@ -893,6 +906,9 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   // Confirm Complete Dialog
   const [showConfirmComplete, setShowConfirmComplete] = useState(false);
   const [itemToComplete, setItemToComplete] = useState<string | null>(null);
+
+  // Confirm Bulk Complete Dialog
+  const [showConfirmBulkComplete, setShowConfirmBulkComplete] = useState(false);
 
   // Folder Dialogs
   const [showAddFolderDialog, setShowAddFolderDialog] = useState(false);
@@ -1063,6 +1079,15 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       toast.error(result.error || 'Failed to create review session');
       return;
     }
+
+    // Reset reviewCompleted flag for all items in the session so new reviews can be displayed
+    // This allows re-requesting reviews after bulk complete
+    const itemIdsInSession = new Set(itemsToShare.map(item => item.id));
+    setItems(prev => prev.map(item =>
+      itemIdsInSession.has(item.id)
+        ? { ...item, reviewCompleted: false, reviewCompletedAt: undefined }
+        : item
+    ));
 
     // Generate review link
     const reviewLink = `${window.location.origin}/review/${token}`;
@@ -1259,9 +1284,19 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   };
 
   // Helper function to get review results for a specific item
-  const getReviewResultsForItem = useCallback((itemId: string): { status: 'approved' | 'rejected'; comment?: string; reviewedAt: string } | null => {
+  // Optional projectId parameter allows checking review results for any project (for sidebar indicators)
+  const getReviewResultsForItem = useCallback((itemId: string, projectId?: string): { status: 'approved' | 'rejected'; comment?: string; reviewedAt: string } | null => {
+    // Determine which project to check - use provided projectId or fall back to activeProjectId
+    const targetProjectId = projectId || activeProjectId;
+
+    // Get target project from projects state (always use projects for latest state)
+    const currentProject = projects.find(p => p.id === targetProjectId);
+    const projectFolderId = currentProject?.folderId;
+
     // First, check if the item itself has review data (from folder reviews applied to projects)
-    const item = items.find(i => i.id === itemId);
+    // Always use projects state to ensure we have the latest data
+    const targetItems = currentProject?.items || [];
+    const item = targetItems.find((i: any) => i.id === itemId);
     if (item?.reviewStatus && item.reviewStatus !== 'pending') {
       return {
         status: item.reviewStatus,
@@ -1270,17 +1305,13 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       };
     }
 
-    // Get current project's folder ID if viewing a project
-    const currentProject = projects.find(p => p.id === activeProjectId);
-    const projectFolderId = currentProject?.folderId;
-
-    // Filter completed review sessions for current project or folder
+    // Filter completed review sessions for target project or folder
     const completedSessions = reviewSessions
       .filter((s: any) => {
         if (!s || s.status !== 'completed') return false;
-        if (s.review_type === 'project') return s.project_id === activeProjectId;
+        if (s.review_type === 'project') return s.project_id === targetProjectId;
         if (s.review_type === 'folder') {
-          // Match if viewing the folder directly OR if current project belongs to the reviewed folder
+          // Match if viewing the folder directly OR if target project belongs to the reviewed folder
           // Also check if folder_id is defined before comparing
           return (currentFolderId && s.folder_id === currentFolderId) ||
                  (projectFolderId && s.folder_id === projectFolderId);
@@ -1310,7 +1341,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     }
 
     return null;
-  }, [items, reviewSessions, activeProjectId, currentFolderId, projects]);
+  }, [reviewSessions, activeProjectId, currentFolderId, projects]);
 
   // Handler: Open confirm complete dialog
   const handleRequestComplete = (itemId: string) => {
@@ -1382,9 +1413,24 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   // Handler: Re-request review for all rejected items in current project
   const handleRequestReReviewAll = async () => {
-    const rejectedItems = items.filter(item =>
-      item.reviewStatus === 'rejected' && !item.reviewCompleted
-    );
+    // Use filteredItems to respect current mediaType filter
+    const currentFilteredItems = (items || []).filter(item => {
+      // Apply same mediaType filter as filteredItems
+      if (!reviewMode?.isReviewMode) {
+        if (!item.mediaType) {
+          if (mediaType !== 'image') return false;
+        } else if (item.mediaType !== mediaType) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const rejectedItems = currentFilteredItems.filter(item => {
+      if (item.reviewCompleted) return false;
+      const reviewResult = getReviewResultsForItem(item.id);
+      return reviewResult && reviewResult.status === 'rejected';
+    });
 
     if (rejectedItems.length === 0) {
       toast.error('재요청할 거부 아이템이 없습니다');
@@ -1392,11 +1438,14 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     }
 
     try {
-      const itemsWithPreviousStatus = rejectedItems.map(item => ({
-        ...item,
-        previousReviewStatus: item.reviewStatus!,
-        reviewStatus: 'pending' as const
-      }));
+      const itemsWithPreviousStatus = rejectedItems.map(item => {
+        const reviewResult = getReviewResultsForItem(item.id);
+        return {
+          ...item,
+          previousReviewStatus: reviewResult!.status,
+          reviewStatus: 'pending' as const
+        };
+      });
 
       // Create review session with all rejected items
       const token = generateShareToken();
@@ -1486,30 +1535,75 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     }
   };
 
-  // Handler: Bulk complete all reviewed items (approved + rejected)
+  // Handler: Show confirm dialog for bulk complete
   const handleBulkCompleteApproved = () => {
-    const reviewedItems = items.filter(item =>
-      (item.reviewStatus === 'approved' || item.reviewStatus === 'rejected') && !item.reviewCompleted
-    );
+    // Use filteredItems to respect current mediaType filter
+    const currentFilteredItems = (items || []).filter(item => {
+      // Apply same mediaType filter as filteredItems
+      if (!reviewMode?.isReviewMode) {
+        if (!item.mediaType) {
+          if (mediaType !== 'image') return false;
+        } else if (item.mediaType !== mediaType) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const reviewedItems = currentFilteredItems.filter(item => {
+      if (item.reviewCompleted) return false;
+      const reviewResult = getReviewResultsForItem(item.id);
+      return reviewResult && (reviewResult.status === 'approved' || reviewResult.status === 'rejected');
+    });
 
     if (reviewedItems.length === 0) {
       toast.error('확인 완료할 리뷰 아이템이 없습니다');
       return;
     }
 
-    setItems(prev => prev.map(item => {
-      if ((item.reviewStatus === 'approved' || item.reviewStatus === 'rejected') && !item.reviewCompleted) {
-        return {
-          ...item,
-          reviewCompleted: true,
-          reviewCompletedAt: Date.now(),
-          reviewStatus: undefined,
-          reviewComment: undefined
-        };
-      }
-      return item;
-    }));
+    // Show confirmation dialog
+    setShowConfirmBulkComplete(true);
+  };
 
+  // Handler: Execute bulk complete after confirmation
+  const executeBulkComplete = () => {
+    // Use filteredItems to respect current mediaType filter
+    const currentFilteredItems = (items || []).filter(item => {
+      if (!reviewMode?.isReviewMode) {
+        if (!item.mediaType) {
+          if (mediaType !== 'image') return false;
+        } else if (item.mediaType !== mediaType) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const reviewedItems = currentFilteredItems.filter(item => {
+      if (item.reviewCompleted) return false;
+      const reviewResult = getReviewResultsForItem(item.id);
+      return reviewResult && (reviewResult.status === 'approved' || reviewResult.status === 'rejected');
+    });
+
+    setItems(prev => {
+      return prev.map(item => {
+        const reviewResult = getReviewResultsForItem(item.id);
+        // Only update items that are in reviewedItems
+        if (reviewedItems.some(ri => ri.id === item.id) &&
+            reviewResult &&
+            (reviewResult.status === 'approved' || reviewResult.status === 'rejected') &&
+            !item.reviewCompleted) {
+          return {
+            ...item,
+            reviewCompleted: true,
+            reviewCompletedAt: Date.now()
+          };
+        }
+        return item;
+      });
+    });
+
+    setShowConfirmBulkComplete(false);
     toast.success(`${reviewedItems.length}개의 아이템이 처리 완료되었습니다`);
   };
 
@@ -2924,24 +3018,34 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       });
     }
 
-    // Apply review status filter (only for creator view)
-    if (!reviewMode?.isReviewMode && reviewFilter !== 'all') {
-      filtered = filtered.filter(item => {
-        // Skip items with completed reviews
-        if (item.reviewCompleted) return false;
-
-        // Get review results for this item
+    // Apply review status filter (only for creator view and only when reviews exist)
+    if (!reviewMode?.isReviewMode) {
+      // Check if there are any reviews to filter
+      const hasAnyReviews = sortedItems.some(item => {
         const reviewResult = getReviewResultsForItem(item.id);
-        if (!reviewResult) return false;
-
-        // Skip hidden items
-        if (item.reviewHidden) return false;
-
-        // Apply filter
-        if (reviewFilter === 'approved') return reviewResult.status === 'approved';
-        if (reviewFilter === 'rejected') return reviewResult.status === 'rejected';
-        return true;
+        return reviewResult !== null;
       });
+
+      if (hasAnyReviews) {
+        // Filter out only hidden reviews (keep completed ones visible)
+        filtered = filtered.filter(item => !item.reviewHidden);
+
+        // Apply specific filter if not 'all'
+        if (reviewFilter !== 'all') {
+          filtered = filtered.filter(item => {
+            // Get review results for this item
+            const reviewResult = getReviewResultsForItem(item.id);
+            if (!reviewResult) return false;
+
+            // Apply filter
+            if (reviewFilter === 'approved') return reviewResult.status === 'approved';
+            if (reviewFilter === 'rejected') return reviewResult.status === 'rejected';
+            return true;
+          });
+        }
+        // For 'all' filter, show all items (both with and without review results)
+        // This allows adding new items while viewing reviews
+      }
     }
 
     // Apply media type filter (for both review mode and creator view)
@@ -3285,6 +3389,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         onSelectFolder={setCurrentFolderId}
                         reviewSessions={reviewSessions}
                         onRequestFolderReReview={handleRequestFolderReReview}
+                        getReviewResultsForItem={getReviewResultsForItem}
                       />
                     ))}
 
@@ -3323,6 +3428,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         onMove={moveProjectToFolder}
                         folders={folders}
                         reviewSessions={reviewSessions}
+                        getReviewResultsForItem={getReviewResultsForItem}
                       />
                     ))}
 
@@ -3476,7 +3582,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     <Button
                       onClick={handleSubmitReview}
                       disabled={isSubmittingReview}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isSubmittingReview ? (
                         <>
@@ -3533,7 +3639,10 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => { setTargetCountByType(prev => ({ ...prev, [mediaType]: prev[mediaType] + 1 })); setFocusNewRow(true); }}
+                      onClick={() => {
+                        setTargetCountByType(prev => ({ ...prev, [mediaType]: prev[mediaType] + 1 }));
+                        setFocusNewRow(true);
+                      }}
                       className="h-8 text-xs"
                     >
                       <Plus className="h-3.5 w-3.5 mr-2 text-slate-500" />
@@ -3643,7 +3752,10 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => { setTargetCountByType(prev => ({ ...prev, [mediaType]: prev[mediaType] + 1 })); setFocusNewRow(true); }}
+                      onClick={() => {
+                        setTargetCountByType(prev => ({ ...prev, [mediaType]: prev[mediaType] + 1 }));
+                        setFocusNewRow(true);
+                      }}
                       className="h-8 text-xs"
                     >
                       <Plus className="h-3.5 w-3.5 mr-1 text-slate-500" />
@@ -3885,6 +3997,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                             reviewStatus={reviewResults.status}
                             reviewComment={reviewResults.comment}
                             reviewedAt={reviewResults.reviewedAt}
+                            reviewCompleted={item.reviewCompleted}
                             onComplete={() => handleRequestComplete(item.id)}
                             onRequestReReview={() => handleRequestReReview(item.id)}
                           />
@@ -4001,7 +4114,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     onClick={() => setReviewFilter('all')}
                     className="flex-1"
                   >
-                    전체 ({items.length})
+                    전체 ({reviewCounts.approved + reviewCounts.rejected})
                   </Button>
                   {reviewCounts.rejected > 0 && (
                     <Button
@@ -4018,15 +4131,17 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
                 {/* Action Buttons */}
                 <div className="px-4 pb-3 flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleBulkCompleteApproved}
-                    className="flex-1 text-green-600 hover:text-green-700 hover:bg-green-50 h-10"
-                  >
-                    <Check className="h-4 w-4 mr-1" />
-                    일괄 확인 완료 ({reviewCounts.approved + reviewCounts.rejected})
-                  </Button>
+                  {reviewFilter !== 'rejected' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleBulkCompleteApproved}
+                      className="flex-1 text-green-600 hover:text-green-700 hover:bg-green-50 h-10"
+                    >
+                      <Check className="h-4 w-4 mr-1" />
+                      일괄 확인 완료 ({reviewCounts.approved + reviewCounts.rejected})
+                    </Button>
+                  )}
                   {reviewCounts.rejected > 0 && reviewFilter === 'rejected' && (
                     <Button
                       variant="outline"
@@ -4403,6 +4518,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                     reviewStatus={reviewResults.status}
                                     reviewComment={reviewResults.comment}
                                     reviewedAt={reviewResults.reviewedAt}
+                                    reviewCompleted={item.reviewCompleted}
                                     onComplete={() => handleRequestComplete(item.id)}
                                     onRequestReReview={() => handleRequestReReview(item.id)}
                                   />
@@ -4495,7 +4611,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                   size="sm"
                   onClick={() => setReviewFilter('all')}
                 >
-                  전체 ({items.length})
+                  전체 ({reviewCounts.approved + reviewCounts.rejected})
                 </Button>
                 {reviewCounts.rejected > 0 && (
                   <Button
@@ -4512,7 +4628,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
               {/* Right Side: Bulk Actions */}
               <div className="flex gap-2">
-                {(reviewCounts.approved > 0 || reviewCounts.rejected > 0) && (
+                {(reviewCounts.approved > 0 || reviewCounts.rejected > 0) && reviewFilter !== 'rejected' && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -4546,7 +4662,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
             <Button
               onClick={handleSubmitReview}
               disabled={isSubmittingReview}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-12 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white h-12 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmittingReview ? (
                 <>
@@ -4905,6 +5021,29 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         itemWord={items.find(i => i.id === itemToComplete)?.word || 'Selected Item'}
         onConfirm={handleCompleteReview}
       />
+
+      {/* Confirm Bulk Complete Dialog */}
+      <Dialog open={showConfirmBulkComplete} onOpenChange={setShowConfirmBulkComplete}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              일괄 확인 완료
+            </DialogTitle>
+            <DialogDescription className="text-left pt-2">
+              확인 완료 처리하면 모든 리뷰 결과가 화면에서 사라집니다. 계속하시겠습니까?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowConfirmBulkComplete(false)}>
+              취소
+            </Button>
+            <Button onClick={executeBulkComplete} className="bg-green-600 hover:bg-green-700">
+              확인 완료
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Share for Review Dialog */}
       <ShareForReviewDialog

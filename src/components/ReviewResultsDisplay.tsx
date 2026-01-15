@@ -10,6 +10,7 @@ interface ReviewResultsDisplayProps {
   compact?: boolean;
   onComplete?: () => void;
   onRequestReReview?: () => void;
+  reviewCompleted?: boolean;
 }
 
 export function ReviewResultsDisplay({
@@ -18,10 +19,11 @@ export function ReviewResultsDisplay({
   reviewedAt,
   compact = false,
   onComplete,
-  onRequestReReview
+  onRequestReReview,
+  reviewCompleted = false
 }: ReviewResultsDisplayProps) {
-  // Don't render if no review status or if still pending
-  if (!reviewStatus || reviewStatus === 'pending') {
+  // Don't render if no review status, if still pending, or if completed
+  if (!reviewStatus || reviewStatus === 'pending' || reviewCompleted) {
     return null;
   }
 
