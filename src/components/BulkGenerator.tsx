@@ -103,6 +103,7 @@ import { ProjectNameDialog } from './project/ProjectNameDialog';
 import { ConfirmDeleteProjectDialog } from './project/ConfirmDeleteProjectDialog';
 import { ConfirmCompleteDialog } from './review/ConfirmCompleteDialog';
 import { submitReviewResults, createReviewSession, getMyReviewSessions } from '../lib/reviewDatabase';
+import { logger } from '../lib/logger';
 
 // Generate stock site search URL based on source and keywords
 function generateStockSiteSearchUrl(source: string, keywords: string, mediaType: 'image' | 'video' = 'image'): string {
@@ -1045,7 +1046,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       // Sharing folder - collect all items from all projects in folder
       itemsToShare = collectItemsFromFolder(currentFolderId);
       folderIdForSession = currentFolderId;
-      console.log(`[Share] Sharing folder ${currentFolderId} with ${itemsToShare.length} items from ${projects.filter(p => p.folderId === currentFolderId).length} projects`);
+      logger.log(`[Share] Sharing folder ${currentFolderId} with ${itemsToShare.length} items from ${projects.filter(p => p.folderId === currentFolderId).length} projects`);
     } else {
       // Sharing single project
       itemsToShare = items.map(item => ({
@@ -1053,7 +1054,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         reviewStatus: 'pending'
       }));
       projectIdForSession = activeProjectId || undefined;
-      console.log(`[Share] Sharing project with ${itemsToShare.length} items`);
+      logger.log(`[Share] Sharing project with ${itemsToShare.length} items`);
     }
 
     if (itemsToShare.length === 0) {
@@ -1625,7 +1626,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       try {
         const result = await getMyReviewSessions();
         if (result.success && result.sessions) {
-          console.log('[Review] Loaded sessions:', result.sessions.length);
+          logger.log('[Review] Loaded sessions:', result.sessions.length);
           setReviewSessions(result.sessions || []);
         }
       } catch (err) {
@@ -1679,7 +1680,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       const addedKeywords = newKeywordsArray.filter(k => !oldKeywordsArray.includes(k));
       const removedKeywords = oldKeywordsArray.filter(k => !newKeywordsArray.includes(k));
 
-      console.log(`[BulkGenerator] 🔄 Applying changes to ${selectedIds.size} selected items:`, {
+      logger.log(`[BulkGenerator] 🔄 Applying changes to ${selectedIds.size} selected items:`, {
         added: addedKeywords,
         removed: removedKeywords
       });
@@ -1785,7 +1786,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     if (!currentItem) return;
 
     const itemMediaType = currentItem.mediaType || mediaType;
-    console.log(`[BulkGenerator] 🎬 handleRegenerateItem called for item ${id} - Item mediaType: ${itemMediaType}, Global mediaType: ${mediaType}`);
+    logger.log(`[BulkGenerator] 🎬 handleRegenerateItem called for item ${id} - Item mediaType: ${itemMediaType}, Global mediaType: ${mediaType}`);
 
     // Free plan: unlimited access (no credit check)
 
@@ -1793,7 +1794,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     const item = updatedData ? { ...currentItem, ...updatedData } : currentItem;
 
     // Log the keywords being used for regeneration
-    console.log(`[BulkGenerator] 🔑 Regenerating with keywords:`, item.keywords || 'none');
+    logger.log(`[BulkGenerator] 🔑 Regenerating with keywords:`, item.keywords || 'none');
 
     if (!item.word) {
         toast.error("Please enter a word first");
@@ -1813,40 +1814,40 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       if (item.keywords && item.keywords.trim().length > 0) {
         // Use existing keywords
         searchTerms = item.keywords;
-        console.log('[BulkGenerator] ✅ AI mode - Using item keywords:', searchTerms);
+        logger.log('[BulkGenerator] ✅ AI mode - Using item keywords:', searchTerms);
       } else {
         // Generate new keywords with AI
-        console.log('[BulkGenerator] 🤖 AI mode - Generating keywords with AI...');
+        logger.log('[BulkGenerator] 🤖 AI mode - Generating keywords with AI...');
         try {
           const aiResult = await optimizeKeywordsWithAI(item.description, item.word);
           if (aiResult && aiResult.searchQuery) {
             searchTerms = aiResult.searchQuery;
-            console.log('[BulkGenerator] ✅ AI Success:', searchTerms);
+            logger.log('[BulkGenerator] ✅ AI Success:', searchTerms);
           } else {
             throw new Error('AI returned empty result');
           }
         } catch (error) {
-          console.log('[BulkGenerator] ⚠️ AI failed, using word fallback:', error);
+          logger.log('[BulkGenerator] ⚠️ AI failed, using word fallback:', error);
           searchTerms = item.word || 'nature';
         }
       }
     } else if (item.isolatedBackground) {
       // Manual mode + Isolated background
       searchTerms = `${item.word} isolated background`;
-      console.log('[BulkGenerator] 🎯 Manual mode - Isolated background:', searchTerms);
+      logger.log('[BulkGenerator] 🎯 Manual mode - Isolated background:', searchTerms);
     } else if (item.keywords && item.keywords.trim().length > 0) {
       // Manual mode + keywords
       searchTerms = item.keywords;
-      console.log('[BulkGenerator] ✅ Manual mode - Using keywords:', searchTerms);
+      logger.log('[BulkGenerator] ✅ Manual mode - Using keywords:', searchTerms);
     } else {
       // Manual mode without keywords - use word only
       searchTerms = item.word;
-      console.log('[BulkGenerator] 🎯 Manual mode - Word only:', searchTerms);
+      logger.log('[BulkGenerator] 🎯 Manual mode - Word only:', searchTerms);
     }
 
     if (!searchTerms || searchTerms.trim().length === 0) {
       searchTerms = item.word || 'nature';
-      console.log('[BulkGenerator] ⚠️ Empty keywords, using fallback:', searchTerms);
+      logger.log('[BulkGenerator] ⚠️ Empty keywords, using fallback:', searchTerms);
     }
 
     let finalSearchTerms = searchTerms;
@@ -1864,7 +1865,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     let mainArtistUrl = '';
 
     const searchAllSources = async (searchTerms: string, selectedSources: string[]) => {
-      console.log('[BulkGenerator] 🔍 Searching all sources in parallel:', {
+      logger.log('[BulkGenerator] 🔍 Searching all sources in parallel:', {
         sources: selectedSources,
         searchTerms,
         mediaType: itemMediaType
@@ -1876,14 +1877,14 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
       const searchPromises = selectedSources.map(async (source) => {
         try {
-          console.log(`[BulkGenerator] 🔍 Trying ${source}...`);
+          logger.log(`[BulkGenerator] 🔍 Trying ${source}...`);
 
           switch (source) {
             case 'unsplash':
               let unsplashResult = await getRandomUnsplashPhoto(searchTerms, { excludeUrls: usedUrls, page: currentPage });
               // If page exhausted, try next page
               if (!unsplashResult) {
-                console.log(`[BulkGenerator] Unsplash page ${currentPage} exhausted, trying page ${currentPage + 1}`);
+                logger.log(`[BulkGenerator] Unsplash page ${currentPage} exhausted, trying page ${currentPage + 1}`);
                 unsplashResult = await getRandomUnsplashPhoto(searchTerms, { excludeUrls: [], page: currentPage + 1 });
                 if (unsplashResult) {
                   currentPage++;
@@ -1901,13 +1902,13 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               break;
 
             case 'pexels':
-              console.log(`[BulkGenerator] Pexels search - mediaType: ${itemMediaType}`);
+              logger.log(`[BulkGenerator] Pexels search - mediaType: ${itemMediaType}`);
               let pexelsResult = itemMediaType === 'video'
                 ? await getRandomPexelsVideo(searchTerms, { excludeUrls: usedUrls, page: currentPage })
                 : await getRandomPexelsPhoto(searchTerms, { excludeUrls: usedUrls, page: currentPage });
               // If page exhausted, try next page
               if (!pexelsResult) {
-                console.log(`[BulkGenerator] Pexels page ${currentPage} exhausted, trying page ${currentPage + 1}`);
+                logger.log(`[BulkGenerator] Pexels page ${currentPage} exhausted, trying page ${currentPage + 1}`);
                 pexelsResult = itemMediaType === 'video'
                   ? await getRandomPexelsVideo(searchTerms, { excludeUrls: [], page: currentPage + 1 })
                   : await getRandomPexelsPhoto(searchTerms, { excludeUrls: [], page: currentPage + 1 });
@@ -1917,7 +1918,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               }
               if (pexelsResult) {
                 const url = itemMediaType === 'video' ? pexelsResult.videoUrl : pexelsResult.imageUrl;
-                console.log(`[BulkGenerator] Pexels result - URL: ${url}, mediaType: ${itemMediaType}`);
+                logger.log(`[BulkGenerator] Pexels result - URL: ${url}, mediaType: ${itemMediaType}`);
                 return {
                   source: 'Pexels',
                   imageUrl: url,
@@ -1934,7 +1935,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                 : await getRandomPixabayImage(searchTerms, { excludeUrls: usedUrls, page: currentPage });
               // If page exhausted, try next page
               if (!pixabayResult) {
-                console.log(`[BulkGenerator] Pixabay page ${currentPage} exhausted, trying page ${currentPage + 1}`);
+                logger.log(`[BulkGenerator] Pixabay page ${currentPage} exhausted, trying page ${currentPage + 1}`);
                 pixabayResult = itemMediaType === 'video'
                   ? await getRandomPixabayVideo(searchTerms, { excludeUrls: [], page: currentPage + 1 })
                   : await getRandomPixabayImage(searchTerms, { excludeUrls: [], page: currentPage + 1 });
@@ -1980,7 +1981,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               break;
           }
 
-          console.log(`[BulkGenerator] ⚠️ ${source} returned no results`);
+          logger.log(`[BulkGenerator] ⚠️ ${source} returned no results`);
           return null;
         } catch (error) {
           console.error(`[BulkGenerator] ❌ Error fetching from ${source}:`, error);
@@ -1990,7 +1991,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
       const results = await Promise.all(searchPromises);
       const validResults = results.filter(r => r !== null);
-      console.log(`[BulkGenerator] ✅ Got ${validResults.length} results from ${selectedSources.length} sources`);
+      logger.log(`[BulkGenerator] ✅ Got ${validResults.length} results from ${selectedSources.length} sources`);
       return { results: validResults, updatedPage: currentPage };
     };
 
@@ -2007,7 +2008,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
       try {
         if (preferredSource) {
-          console.log(`[BulkGenerator] 🎯 Using preferred source: ${preferredSource}`);
+          logger.log(`[BulkGenerator] 🎯 Using preferred source: ${preferredSource}`);
 
           switch (preferredSource) {
             case 'unsplash':
@@ -2105,7 +2106,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       }
     };
 
-    console.log(`[BulkGenerator] Generating ${count} ${itemMediaType}(s)...`);
+    logger.log(`[BulkGenerator] Generating ${count} ${itemMediaType}(s)...`);
 
     const { results: allResults, updatedPage } = await searchAllSources(finalSearchTerms, Array.from(imageSource));
 
@@ -2130,7 +2131,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
           sourceUrl: bestResult.sourceUrl
         });
 
-        console.log(`[BulkGenerator] ✅ Selected best result from ${mainResultSource}`);
+        logger.log(`[BulkGenerator] ✅ Selected best result from ${mainResultSource}`);
       } else {
         const fallback = await generateSingleImage();
         mainImageUrl = fallback.imageUrl;
@@ -2165,7 +2166,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
           }
         }
 
-        console.log(`[BulkGenerator] ✅ Generated ${count} images from different sources`);
+        logger.log(`[BulkGenerator] ✅ Generated ${count} images from different sources`);
       } else {
         for (let i = 0; i < count; i++) {
           const result = await generateSingleImage();
@@ -2185,7 +2186,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       }
     }
 
-    console.log('🎨 [DEBUG] Saving artist data:', {
+    logger.log('🎨 [DEBUG] Saving artist data:', {
       artistName: mainArtistName,
       artistUrl: mainArtistUrl,
       imageSource: mainResultSource
@@ -2216,7 +2217,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                 currentPage: updatedPage // Update current page for pagination
             };
 
-            console.log('✅ [DEBUG] Updated item:', {
+            logger.log('✅ [DEBUG] Updated item:', {
               id: updatedItem.id,
               artistName: updatedItem.artistName,
               artistUrl: updatedItem.artistUrl,
@@ -2730,41 +2731,41 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
             if (item.keywords && item.keywords.trim().length > 0) {
                 // Use existing keywords
                 searchTerms = item.keywords;
-                console.log('[BulkGenerator Extract] ✅ AI mode - Using existing keywords:', searchTerms);
+                logger.log('[BulkGenerator Extract] ✅ AI mode - Using existing keywords:', searchTerms);
             } else {
                 // Generate new keywords with AI
-                console.log('[BulkGenerator Extract] 🤖 AI mode - Generating with AI...');
+                logger.log('[BulkGenerator Extract] 🤖 AI mode - Generating with AI...');
                 try {
                     const aiResult = await optimizeKeywordsWithAI(item.description, item.word);
                     if (aiResult && aiResult.searchQuery) {
                         searchTerms = aiResult.searchQuery;
-                        console.log('[BulkGenerator Extract] ✅ AI Success:', searchTerms);
+                        logger.log('[BulkGenerator Extract] ✅ AI Success:', searchTerms);
                     } else {
                         throw new Error('AI returned empty result');
                     }
                 } catch (error) {
-                    console.log('[BulkGenerator Extract] ⚠️ AI failed, using word fallback:', error);
+                    logger.log('[BulkGenerator Extract] ⚠️ AI failed, using word fallback:', error);
                     searchTerms = item.word || 'nature';
                 }
             }
         } else if (item.isolatedBackground) {
             // Manual mode + Isolated background
             searchTerms = `${item.word} isolated background`;
-            console.log('[BulkGenerator Extract] 🎯 Manual mode - Isolated background:', searchTerms);
+            logger.log('[BulkGenerator Extract] 🎯 Manual mode - Isolated background:', searchTerms);
         } else if (item.keywords && item.keywords.trim().length > 0) {
             // Manual mode + keywords
             searchTerms = item.keywords;
-            console.log('[BulkGenerator Extract] ✅ Manual mode - Using keywords:', searchTerms);
+            logger.log('[BulkGenerator Extract] ✅ Manual mode - Using keywords:', searchTerms);
         } else {
             // Manual mode without keywords - use word only
             searchTerms = item.word;
-            console.log('[BulkGenerator Extract] 🎯 Manual mode - Word only:', searchTerms);
+            logger.log('[BulkGenerator Extract] 🎯 Manual mode - Word only:', searchTerms);
         }
 
         // Ensure searchTerms is not empty
         if (!searchTerms || searchTerms.trim().length === 0) {
             searchTerms = item.word || 'nature';
-            console.log('[BulkGenerator Extract] ⚠️ Empty keywords, using fallback:', searchTerms);
+            logger.log('[BulkGenerator Extract] ⚠️ Empty keywords, using fallback:', searchTerms);
         }
 
         // Prepend base keywords only in AI mode (isolated = false)
@@ -2899,7 +2900,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         };
 
         // Generate multiple images
-        console.log(`[BulkGenerator Extract] Generating ${count} ${mediaType}(s) for ${item.word}...`);
+        logger.log(`[BulkGenerator Extract] Generating ${count} ${mediaType}(s) for ${item.word}...`);
         for (let i = 0; i < count; i++) {
           const result = await generateSingleImage(mediaType);
           generatedImages.push(result.imageUrl);

@@ -1,4 +1,6 @@
 // OpenAI API Service for Keyword Optimization
+import { logger } from '../lib/logger';
+
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const API_URL = 'https://api.openai.com/v1/chat/completions';
 
@@ -28,7 +30,7 @@ export async function optimizeKeywordsWithAI(
     ];
     const randomHint = variations[Math.floor(Math.random() * variations.length)];
 
-    console.log('[OpenAI] 🔍 Starting optimization:', {
+    logger.log('[OpenAI] 🔍 Starting optimization:', {
       description,
       word,
       hint: randomHint,
@@ -134,7 +136,7 @@ Return ONLY ONE set of keywords (space-separated):`;
     // Create search query (space-separated for stock sites)
     const searchQuery = keywords.join(' ');
 
-    console.log('[OpenAI] ✅ Optimization complete:', {
+    logger.log('[OpenAI] ✅ Optimization complete:', {
       original: description,
       phrase,
       keywords: keywords,

@@ -1,5 +1,6 @@
 // Pexels API Service
 import { enhanceSearchQuery } from './searchUtils';
+import { logger } from '../lib/logger';
 
 const API_KEY = import.meta.env.VITE_PEXELS_API_KEY;
 const API_BASE_URL = 'https://api.pexels.com/v1';
@@ -77,7 +78,7 @@ export async function searchPexelsPhotos(
 ): Promise<PexelsPhoto[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    console.log('[Pexels] Searching for photos:', enhancedQuery);
+    logger.log('[Pexels] Searching for photos:', enhancedQuery);
 
     if (!API_KEY) {
       console.error('[Pexels] API key is missing');
@@ -101,7 +102,7 @@ export async function searchPexelsPhotos(
     }
 
     const data: PexelsPhotoSearchResponse = await response.json();
-    console.log('[Pexels] Found', data.photos.length, 'photos');
+    logger.log('[Pexels] Found', data.photos.length, 'photos');
 
     return data.photos || [];
   } catch (error) {
@@ -122,7 +123,7 @@ export async function getRandomPexelsPhoto(
     const photos = await searchPexelsPhotos(query, { perPage: 20, page });
 
     if (photos.length === 0) {
-      console.warn('[Pexels] No photos found for query:', query);
+      logger.warn('[Pexels] No photos found for query:', query);
       return null;
     }
 
@@ -130,7 +131,7 @@ export async function getRandomPexelsPhoto(
     const unusedPhotos = photos.filter(photo => !excludeUrls.includes(photo.src.large));
 
     if (unusedPhotos.length === 0) {
-      console.warn('[Pexels] All photos on page', page, 'have been used');
+      logger.warn('[Pexels] All photos on page', page, 'have been used');
       return null;
     }
 
@@ -145,7 +146,7 @@ export async function getRandomPexelsPhoto(
       photographerUrl: selectedPhoto.photographer_url
     };
 
-    console.log('[Pexels] Successfully selected photo from page', page, ':', result);
+    logger.log('[Pexels] Successfully selected photo from page', page, ':', result);
 
     return result;
   } catch (error) {
@@ -166,7 +167,7 @@ export async function searchPexelsVideos(
 ): Promise<PexelsVideo[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    console.log('[Pexels] Searching for videos:', enhancedQuery);
+    logger.log('[Pexels] Searching for videos:', enhancedQuery);
 
     if (!API_KEY) {
       console.error('[Pexels] API key is missing');
@@ -190,7 +191,7 @@ export async function searchPexelsVideos(
     }
 
     const data: PexelsVideoSearchResponse = await response.json();
-    console.log('[Pexels] Found', data.videos.length, 'videos');
+    logger.log('[Pexels] Found', data.videos.length, 'videos');
 
     return data.videos || [];
   } catch (error) {
@@ -211,7 +212,7 @@ export async function getRandomPexelsVideo(
     const videos = await searchPexelsVideos(query, { perPage: 20, page });
 
     if (videos.length === 0) {
-      console.warn('[Pexels] No videos found for query:', query);
+      logger.warn('[Pexels] No videos found for query:', query);
       return null;
     }
 
@@ -225,7 +226,7 @@ export async function getRandomPexelsVideo(
     const unusedVideos = videosWithUrls.filter(v => !excludeUrls.includes(v.videoUrl));
 
     if (unusedVideos.length === 0) {
-      console.warn('[Pexels] All videos on page', page, 'have been used');
+      logger.warn('[Pexels] All videos on page', page, 'have been used');
       return null;
     }
 
@@ -240,7 +241,7 @@ export async function getRandomPexelsVideo(
       photographerUrl: selected.video.user.url
     };
 
-    console.log('[Pexels] Successfully selected video from page', page, ':', result);
+    logger.log('[Pexels] Successfully selected video from page', page, ':', result);
 
     return result;
   } catch (error) {

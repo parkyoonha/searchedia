@@ -47,6 +47,7 @@ import { PricingDialog, PaymentDialog, LoginDialog } from './components/subscrip
 import { supabase } from './lib/supabase';
 import { loadProjectsFromDB, saveProjectToDB, deleteProjectFromDB, syncProjectsToDB, loadFoldersFromDB, syncFoldersToDB, deleteFolderFromDB } from './lib/database';
 import { getMyReviewSessions } from './lib/reviewDatabase';
+import { logger } from './lib/logger';
 
 export interface Folder {
   id: string;
@@ -132,21 +133,21 @@ export default function App() {
   useEffect(() => {
     // Skip saving during initial load to prevent overwriting DB with empty array
     if (!isInitialLoadComplete) {
-      console.log('[App] Skipping save - initial load not complete');
+      logger.log('[App] Skipping save - initial load not complete');
       return;
     }
 
     // Only save if user is logged in
     if (user && projects.length > 0) {
-      console.log('[App] Saving projects to DB:', projects.length, 'projects');
+      logger.log('[App] Saving projects to DB:', projects.length, 'projects');
       // Save to localStorage for backup
       localStorage.setItem('geminiProjects', JSON.stringify(projects));
       // Save to DB
       syncProjectsToDB(projects, user.id)
-        .then(() => console.log('[App] Successfully synced projects to DB'))
+        .then(() => logger.log('[App] Successfully synced projects to DB'))
         .catch(err => console.error('[App] Failed to sync projects to DB:', err));
     } else if (!user) {
-      console.log('[App] User logged out, clearing localStorage');
+      logger.log('[App] User logged out, clearing localStorage');
       // Clear localStorage when logged out
       localStorage.removeItem('geminiProjects');
       localStorage.removeItem('geminiActiveProjectId');
@@ -164,10 +165,10 @@ export default function App() {
     if (user) {
       // Always save folders to localStorage, even if empty (to clear old data)
       localStorage.setItem('geminiFolders', JSON.stringify(folders));
-      console.log('[App] Saved folders to localStorage:', folders.length);
+      logger.log('[App] Saved folders to localStorage:', folders.length);
       // Save to DB
       syncFoldersToDB(folders, user.id)
-        .then(() => console.log('[App] Successfully synced folders to DB'))
+        .then(() => logger.log('[App] Successfully synced folders to DB'))
         .catch(err => console.error('[App] Failed to sync folders to DB:', err));
     } else if (!user) {
       localStorage.removeItem('geminiFolders');
@@ -181,7 +182,7 @@ export default function App() {
       try {
         const parsed = JSON.parse(savedFolders);
         setFolders(parsed);
-        console.log('[App] Loaded folders from localStorage:', parsed.length);
+        logger.log('[App] Loaded folders from localStorage:', parsed.length);
       } catch (error) {
         console.error('[App] Failed to parse folders from localStorage:', error);
       }
@@ -221,11 +222,11 @@ export default function App() {
 
     const loadUserData = async (session: any) => {
       if (hasLoadedData) {
-        console.log('[App] Data already loaded, skipping');
+        logger.log('[App] Data already loaded, skipping');
         return;
       }
 
-      console.log('[App] Loading user data...');
+      logger.log('[App] Loading user data...');
       hasLoadedData = true;
 
       try {
@@ -244,7 +245,7 @@ export default function App() {
         if (localProjects) {
           const parsed = JSON.parse(localProjects);
           if (parsed.length > 0) {
-            console.log('[App] Loading from localStorage:', parsed.length, 'projects');
+            logger.log('[App] Loading from localStorage:', parsed.length, 'projects');
             // Ensure all projects have items array
             const validatedProjects = parsed.map((p: Project) => ({
               ...p,
@@ -262,19 +263,19 @@ export default function App() {
         if (localFolders) {
           const parsed = JSON.parse(localFolders);
           if (parsed.length > 0) {
-            console.log('[App] Loading from localStorage:', parsed.length, 'folders');
+            logger.log('[App] Loading from localStorage:', parsed.length, 'folders');
             setFolders(parsed);
           }
         }
 
         // Then try to load from DB in background (with short timeout)
-        console.log('[App] Loading from DB in background...');
+        logger.log('[App] Loading from DB in background...');
         Promise.race([
           loadProjectsFromDB(),
           new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2000))
         ]).then(dbProjects => {
           if (dbProjects.length > 0) {
-            console.log('[App] Loaded from DB:', dbProjects.length, 'projects');
+            logger.log('[App] Loaded from DB:', dbProjects.length, 'projects');
             // Ensure all projects have items array
             const validatedProjects = dbProjects.map((p: Project) => ({
               ...p,
@@ -298,7 +299,7 @@ export default function App() {
           new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2000))
         ]).then(dbFolders => {
           if (dbFolders.length > 0) {
-            console.log('[App] Loaded from DB:', dbFolders.length, 'folders');
+            logger.log('[App] Loaded from DB:', dbFolders.length, 'folders');
             setFolders(dbFolders);
           } else if (localFolders) {
             // Sync localStorage to DB
@@ -324,14 +325,14 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('[App] onAuthStateChange event:', _event);
+      logger.log('[App] onAuthStateChange event:', _event);
 
       if (session?.user) {
-        console.log('[App] User authenticated');
+        logger.log('[App] User authenticated');
         await loadUserData(session);
       } else {
         // User logged out
-        console.log('[App] User signed out');
+        logger.log('[App] User signed out');
         setUser(null);
         setProjects([]);
         setActiveProjectId(null);
@@ -357,7 +358,7 @@ export default function App() {
 
   const updateActiveProjectItems = (newItems: BulkItem[] | ((prev: BulkItem[]) => BulkItem[])) => {
     if (!activeProjectId) {
-      console.log('[App] No activeProjectId, returning');
+      logger.log('[App] No activeProjectId, returning');
       return;
     }
 
@@ -709,7 +710,7 @@ export default function App() {
 
         if (completedFolderReviews.length === 0) return;
 
-        console.log('[App] Found completed folder reviews:', completedFolderReviews.length);
+        logger.log('[App] Found completed folder reviews:', completedFolderReviews.length);
 
         // Group review items by projectId
         const reviewItemsByProject = new Map<string, Map<string, any>>();
@@ -731,7 +732,7 @@ export default function App() {
 
         if (reviewItemsByProject.size === 0) return;
 
-        console.log('[App] Applying review results to', reviewItemsByProject.size, 'projects');
+        logger.log('[App] Applying review results to', reviewItemsByProject.size, 'projects');
 
         // Update projects with review results (only if changes are needed)
         setProjects(prev => {
@@ -765,7 +766,7 @@ export default function App() {
           });
 
           if (hasChanges) {
-            console.log('[App] Review results applied successfully');
+            logger.log('[App] Review results applied successfully');
             return updated;
           }
           return prev; // Return previous state if no changes
@@ -909,7 +910,7 @@ export default function App() {
                 <Button variant="outline" onClick={() => setCurrentDialog(null)}>Cancel</Button>
                 <Button variant="destructive" onClick={async () => {
                   try {
-                    console.log('Starting logout process...');
+                    logger.log('Starting logout process...');
 
                     // Sign out from Supabase with timeout
                     const signOutPromise = supabase.auth.signOut();
@@ -919,9 +920,9 @@ export default function App() {
 
                     try {
                       await Promise.race([signOutPromise, timeoutPromise]);
-                      console.log('Supabase signOut successful');
+                      logger.log('Supabase signOut successful');
                     } catch (error) {
-                      console.warn('Supabase signOut failed or timed out, forcing local logout:', error);
+                      logger.warn('Supabase signOut failed or timed out, forcing local logout:', error);
                     }
 
                     // Always clear auth data from localStorage
@@ -934,7 +935,7 @@ export default function App() {
                     setCurrentDialog(null);
                     setViewMode('landing');
 
-                    console.log('Logout completed successfully');
+                    logger.log('Logout completed successfully');
                     toast.success("Logged out successfully");
                   } catch (error) {
                     console.error('Logout error:', error);

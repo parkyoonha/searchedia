@@ -4,6 +4,7 @@ import { BulkGenerator, BulkItem } from './BulkGenerator';
 import { LoginDialog } from './subscription/SubscriptionModals';
 import { loadReviewSession } from '../lib/reviewDatabase';
 import { supabase } from '../lib/supabase';
+import { logger } from '../lib/logger';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
@@ -41,7 +42,7 @@ export function ReviewModeWrapper() {
         return;
       }
 
-      console.log('[ReviewMode] Loading review session for token:', token);
+      logger.log('[ReviewMode] Loading review session for token:', token);
 
       const reviewPromise = loadReviewSession(token);
       const reviewTimeoutPromise = new Promise<any>((_, reject) =>
@@ -50,7 +51,7 @@ export function ReviewModeWrapper() {
 
       const result = await Promise.race([reviewPromise, reviewTimeoutPromise]);
 
-      console.log('[ReviewMode] Load result:', result);
+      logger.log('[ReviewMode] Load result:', result);
 
       if (!result.success || !result.session) {
         console.error('[ReviewMode] Failed to load session:', result.error);
@@ -59,7 +60,7 @@ export function ReviewModeWrapper() {
         return;
       }
 
-      console.log('[ReviewMode] Session loaded successfully:', result.session.id);
+      logger.log('[ReviewMode] Session loaded successfully:', result.session.id);
       setReviewSession(result.session);
       setItems(result.session.items);
 
@@ -82,7 +83,7 @@ export function ReviewModeWrapper() {
           });
         }
       } catch (authError) {
-        console.log('Auth check skipped:', authError);
+        logger.log('Auth check skipped:', authError);
       }
 
       setLoading(false);

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { logger } from './logger';
 import { BulkItem } from '../components/BulkGenerator';
 
 export interface ReviewSession {
@@ -192,9 +193,9 @@ export async function submitReviewResults(
 
   const url = `${supabaseUrl}/rest/v1/review_sessions?share_token=eq.${shareToken}`;
 
-  console.log('✉️ Submitting review...');
+  logger.log('✉️ Submitting review...');
   const itemsWithReview = items.filter(i => i.reviewStatus || i.reviewComment);
-  console.log('📝 Review data:', {
+  logger.log('📝 Review data:', {
     shareToken,
     items_count: items.length,
     items_with_review: itemsWithReview.length,
@@ -237,7 +238,7 @@ export async function submitReviewResults(
       }
 
       const data = await response.json();
-      console.log('✅ Review submitted!', {
+      logger.log('✅ Review submitted!', {
         status: data[0]?.status,
         project_id: data[0]?.project_id,
         id: data[0]?.id,
@@ -280,11 +281,11 @@ export async function getMyReviewSessions(): Promise<{
     const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
 
     if (!session?.user) {
-      console.warn('[Review] User not authenticated');
+      logger.warn('[Review] User not authenticated');
       return { success: false, error: 'User not authenticated' };
     }
 
-    console.log('[Review] Loading sessions for user:', session.user.id);
+    logger.log('[Review] Loading sessions for user:', session.user.id);
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -316,14 +317,14 @@ export async function getMyReviewSessions(): Promise<{
       created_at: s.created_at
     }));
 
-    console.log('📥 [Review] Loaded sessions:', {
+    logger.log('📥 [Review] Loaded sessions:', {
       total: data.length,
       completed: completed.length,
       completed_session_ids: completed.map((s: any) => s.id.substring(0, 8))
     });
 
     // Log ALL sessions status
-    console.table(data.map((s: any) => ({
+    logger.table(data.map((s: any) => ({
       id: s.id.substring(0, 8),
       status: s.status,
       project_id: s.project_id,
@@ -331,12 +332,12 @@ export async function getMyReviewSessions(): Promise<{
       created_at: new Date(s.created_at).toLocaleTimeString()
     })));
 
-    console.log('✅ [Review] COMPLETED sessions detail:', completedDetails);
+    logger.log('✅ [Review] COMPLETED sessions detail:', completedDetails);
 
     // Track ALL completed sessions in detail
     completed.forEach((s: any) => {
       const itemsWithReview = s.items?.filter((i: any) => i.reviewStatus || i.reviewComment).length || 0;
-      console.log(`🔍 [TRACK ${s.id.substring(0, 8)}]`, {
+      logger.log(`🔍 [TRACK ${s.id.substring(0, 8)}]`, {
         status: s.status,
         items_count: s.items?.length || 0,
         items_with_review: itemsWithReview,
@@ -344,7 +345,7 @@ export async function getMyReviewSessions(): Promise<{
       });
 
       if (itemsWithReview === 0) {
-        console.warn(`⚠️ [WARNING] Completed session ${s.id.substring(0, 8)} has NO review data!`);
+        logger.warn(`⚠️ [WARNING] Completed session ${s.id.substring(0, 8)} has NO review data!`);
       }
     });
 
@@ -364,7 +365,7 @@ export async function updateReviewSessionItems(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const itemsWithReview = items.filter(i => i.reviewStatus || i.reviewComment);
-    console.log('💾 [Auto-save] Updating items:', {
+    logger.log('💾 [Auto-save] Updating items:', {
       shareToken,
       total_items: items.length,
       items_with_review: itemsWithReview.length
@@ -386,7 +387,7 @@ export async function updateReviewSessionItems(
     if (checkResponse.ok) {
       const checkData = await checkResponse.json();
       if (checkData[0]?.status === 'completed') {
-        console.log('🚫 [Auto-save] Session already completed, skipping update');
+        logger.log('🚫 [Auto-save] Session already completed, skipping update');
         return { success: false, error: 'Session already completed' };
       }
     }
@@ -408,10 +409,10 @@ export async function updateReviewSessionItems(
       throw new Error(`HTTP ${response.status}`);
     }
 
-    console.log('✅ [Auto-save] Items updated successfully');
+    logger.log('✅ [Auto-save] Items updated successfully');
 
     // Log ALL auto-save updates
-    console.log('⚠️ [AUTO-SAVE UPDATE]', {
+    logger.log('⚠️ [AUTO-SAVE UPDATE]', {
       shareToken: shareToken.substring(0, 8),
       items_count: items.length,
       items_with_review: items.filter(i => i.reviewStatus || i.reviewComment).length

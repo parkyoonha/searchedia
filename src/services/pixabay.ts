@@ -1,5 +1,6 @@
 // Pixabay API Service
 import { enhanceSearchQuery } from './searchUtils';
+import { logger } from '../lib/logger';
 
 const API_KEY = import.meta.env.VITE_PIXABAY_API_KEY;
 const API_BASE_URL = 'https://pixabay.com/api/';
@@ -80,7 +81,7 @@ export async function searchPixabayImages(
 ): Promise<PixabayImage[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    console.log('[Pixabay] Searching for images:', enhancedQuery);
+    logger.log('[Pixabay] Searching for images:', enhancedQuery);
 
     if (!API_KEY) {
       console.error('[Pixabay] API key is missing');
@@ -103,7 +104,7 @@ export async function searchPixabayImages(
     }
 
     const data: PixabayImageSearchResponse = await response.json();
-    console.log('[Pixabay] Found', data.hits.length, 'images');
+    logger.log('[Pixabay] Found', data.hits.length, 'images');
 
     return data.hits || [];
   } catch (error) {
@@ -124,7 +125,7 @@ export async function getRandomPixabayImage(
     const images = await searchPixabayImages(query, { perPage: 20, page });
 
     if (images.length === 0) {
-      console.warn('[Pixabay] No images found for query:', query);
+      logger.warn('[Pixabay] No images found for query:', query);
       return null;
     }
 
@@ -132,7 +133,7 @@ export async function getRandomPixabayImage(
     const unusedImages = images.filter(img => !excludeUrls.includes(img.largeImageURL));
 
     if (unusedImages.length === 0) {
-      console.warn('[Pixabay] All images on page', page, 'have been used');
+      logger.warn('[Pixabay] All images on page', page, 'have been used');
       return null;
     }
 
@@ -147,7 +148,7 @@ export async function getRandomPixabayImage(
       photographerUrl: '' // Pixabay API doesn't provide direct photographer URL
     };
 
-    console.log('[Pixabay] Successfully selected image from page', page, ':', result);
+    logger.log('[Pixabay] Successfully selected image from page', page, ':', result);
 
     return result;
   } catch (error) {
@@ -168,7 +169,7 @@ export async function searchPixabayVideos(
 ): Promise<PixabayVideo[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    console.log('[Pixabay] Searching for videos:', enhancedQuery);
+    logger.log('[Pixabay] Searching for videos:', enhancedQuery);
 
     if (!API_KEY) {
       console.error('[Pixabay] API key is missing');
@@ -191,7 +192,7 @@ export async function searchPixabayVideos(
     }
 
     const data: PixabayVideoSearchResponse = await response.json();
-    console.log('[Pixabay] Found', data.hits.length, 'videos');
+    logger.log('[Pixabay] Found', data.hits.length, 'videos');
 
     return data.hits || [];
   } catch (error) {
@@ -212,7 +213,7 @@ export async function getRandomPixabayVideo(
     const videos = await searchPixabayVideos(query, { perPage: 20, page });
 
     if (videos.length === 0) {
-      console.warn('[Pixabay] No videos found for query:', query);
+      logger.warn('[Pixabay] No videos found for query:', query);
       return null;
     }
 
@@ -220,7 +221,7 @@ export async function getRandomPixabayVideo(
     const unusedVideos = videos.filter(video => !excludeUrls.includes(video.videos.large.url));
 
     if (unusedVideos.length === 0) {
-      console.warn('[Pixabay] All videos on page', page, 'have been used');
+      logger.warn('[Pixabay] All videos on page', page, 'have been used');
       return null;
     }
 
@@ -235,7 +236,7 @@ export async function getRandomPixabayVideo(
       photographerUrl: '' // Pixabay API doesn't provide direct photographer URL
     };
 
-    console.log('[Pixabay] Successfully selected video from page', page, ':', result);
+    logger.log('[Pixabay] Successfully selected video from page', page, ':', result);
 
     return result;
   } catch (error) {

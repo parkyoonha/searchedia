@@ -64,6 +64,7 @@ import { getRandomFreepikImage, getRandomFreepikVideo } from '../services/freepi
 import { KeywordPreview } from './KeywordPreview';
 import { TypingAnimation } from './ui/typing-animation';
 import { optimizeKeywordsWithAI } from '../services/ai';
+import { logger } from '../lib/logger';
 
 const extractKeywords = (text: string, word: string) => {
     const stopWords = new Set(['a', 'an', 'the', 'in', 'on', 'at', 'with', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'to', 'for', 'of', 'my']);
@@ -260,7 +261,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
 
   // Helper function to search all selected sources in parallel
   const searchAllSources = async (searchTerms: string, selectedSources: string[], mediaType: 'image' | 'video') => {
-    console.log('[LandingWizard] 🔍 Searching all sources in parallel:', {
+    logger.log('[LandingWizard] 🔍 Searching all sources in parallel:', {
       sources: selectedSources,
       searchTerms,
       mediaType
@@ -269,7 +270,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     // Create array of promises for all selected sources
     const searchPromises = selectedSources.map(async (source) => {
       try {
-        console.log(`[LandingWizard] 🔍 Trying ${source}...`);
+        logger.log(`[LandingWizard] 🔍 Trying ${source}...`);
 
         switch (source) {
           case 'unsplash':
@@ -341,7 +342,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
             break;
         }
 
-        console.log(`[LandingWizard] ⚠️ ${source} returned no results`);
+        logger.log(`[LandingWizard] ⚠️ ${source} returned no results`);
         return null;
       } catch (error) {
         console.error(`[LandingWizard] ❌ Error fetching from ${source}:`, error);
@@ -355,7 +356,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     // Filter out null results
     const validResults = results.filter(r => r !== null);
 
-    console.log(`[LandingWizard] ✅ Got ${validResults.length} results from ${selectedSources.length} sources`);
+    logger.log(`[LandingWizard] ✅ Got ${validResults.length} results from ${selectedSources.length} sources`);
 
     return validResults;
   };
@@ -366,7 +367,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     // Use existing keywords if available, otherwise generate new ones
     let searchTerms = '';
 
-    console.log('[LandingWizard] 🔍 handleFinalSubmit - Current state:', {
+    logger.log('[LandingWizard] 🔍 handleFinalSubmit - Current state:', {
       isolatedBackground: selections.isolatedBackground,
       isolated: selections.isolated,
       keywords: selections.keywords,
@@ -380,11 +381,11 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     if (selections.isolatedBackground) {
       // Manual mode + Isolated background - ALWAYS use this when isolatedBackground is true
       searchTerms = `${selections.word} isolated background`;
-      console.log('[LandingWizard] 🎯 Isolated background mode (PRIORITY):', searchTerms);
+      logger.log('[LandingWizard] 🎯 Isolated background mode (PRIORITY):', searchTerms);
     } else if (selections.keywords && selections.keywords.trim().length > 0) {
       // Use pre-generated keywords from KeywordPreview
       searchTerms = selections.keywords;
-      console.log('[LandingWizard] ✅ Using keywords from KeywordPreview:', searchTerms);
+      logger.log('[LandingWizard] ✅ Using keywords from KeywordPreview:', searchTerms);
     } else if (selections.isolated === false) {
       // AI mode - Try AI optimization first, fallback to manual extraction
       try {
@@ -392,35 +393,35 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
 
         if (aiResult && aiResult.searchQuery) {
           searchTerms = aiResult.searchQuery;
-          console.log('[LandingWizard] ✅ AI Success:', { searchQuery: searchTerms });
+          logger.log('[LandingWizard] ✅ AI Success:', { searchQuery: searchTerms });
         } else {
           throw new Error('AI returned empty result');
         }
       } catch (error) {
         // Fallback to manual extraction
-        console.log('[LandingWizard] ⚠️ AI failed, using manual:', error);
+        logger.log('[LandingWizard] ⚠️ AI failed, using manual:', error);
         const keywords = extractKeywords(selections.description, selections.word);
         searchTerms = keywords.replace(/#/g, '').replace(/\s+/g, ' ');
-        console.log('[LandingWizard] Manual keywords:', searchTerms);
+        logger.log('[LandingWizard] Manual keywords:', searchTerms);
       }
     } else {
       // Manual mode - use manual extraction (fallback)
       const keywords = extractKeywords(selections.description, selections.word);
       searchTerms = keywords.replace(/#/g, '').replace(/\s+/g, ' ');
-      console.log('[LandingWizard] 🎯 Manual mode keywords (fallback):', searchTerms);
+      logger.log('[LandingWizard] 🎯 Manual mode keywords (fallback):', searchTerms);
     }
 
     // Ensure searchTerms is not empty
     if (!searchTerms || searchTerms.trim().length === 0) {
       searchTerms = selections.word || 'nature';
-      console.log('[LandingWizard] ⚠️ Empty keywords, using fallback:', searchTerms);
+      logger.log('[LandingWizard] ⚠️ Empty keywords, using fallback:', searchTerms);
     }
 
     // Prepend base keywords only in AI mode (isolated = false)
     let finalSearchTerms = searchTerms;
     if (!selections.isolated && selections.baseKeywords && selections.baseKeywords.trim()) {
       finalSearchTerms = `${selections.baseKeywords.trim()} ${searchTerms}`;
-      console.log('[LandingWizard] Added base keywords (AI mode):', finalSearchTerms);
+      logger.log('[LandingWizard] Added base keywords (AI mode):', finalSearchTerms);
     }
 
     // Generate multiple images based on count setting
@@ -433,7 +434,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
     let photographerUrl = '';
 
     try {
-      console.log('[LandingWizard] 🔍 Generating', count, 'media(s):', {
+      logger.log('[LandingWizard] 🔍 Generating', count, 'media(s):', {
         selectedSources: selections.sources,
         searchTerms: finalSearchTerms,
         baseKeywords: selections.baseKeywords
@@ -502,7 +503,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
         }
       }
 
-      console.log(`[LandingWizard] ✅ Generated ${count} media(s), primary source: ${imageSource}`);
+      logger.log(`[LandingWizard] ✅ Generated ${count} media(s), primary source: ${imageSource}`);
     } catch (error) {
       console.error('[LandingWizard] Error fetching images:', error);
       // Fallback to AI-generated image on error
@@ -530,7 +531,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
       }
     }
 
-    console.log('[LandingWizard] 🔍 Completing with:', {
+    logger.log('[LandingWizard] 🔍 Completing with:', {
       isolated: selections.isolated,
       isolatedBackground: selections.isolatedBackground,
       searchTerms: searchTerms,
@@ -819,12 +820,12 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                                 ));
                             }}
                             onIsolatedBackgroundChange={(value) => {
-                                console.log('[LandingWizard] onIsolatedBackgroundChange called with value:', value);
+                                logger.log('[LandingWizard] onIsolatedBackgroundChange called with value:', value);
                                 setBriefItems(prev => {
                                     const updated = prev.map((i, idx) =>
                                         idx === 0 ? { ...i, isolatedBackground: value } : i
                                     );
-                                    console.log('[LandingWizard] Updated briefItems:', updated[0]);
+                                    logger.log('[LandingWizard] Updated briefItems:', updated[0]);
                                     return updated;
                                 });
                             }}
@@ -1168,11 +1169,11 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                      onAddAllKeywords={handleAddAllKeywords}
                      onKeywordsGenerated={(keywords) => updateSelection('keywords', keywords)}
                      onIsolatedBackgroundChange={(value) => {
-                       console.log('[LandingWizard Step5] onIsolatedBackgroundChange called with value:', value);
+                       logger.log('[LandingWizard Step5] onIsolatedBackgroundChange called with value:', value);
                        updateSelection('isolatedBackground', value);
                      }}
                      onModeChange={(enabled) => {
-                       console.log('[LandingWizard Step5] onModeChange called with enabled:', enabled);
+                       logger.log('[LandingWizard Step5] onModeChange called with enabled:', enabled);
                        updateSelection('isolated', !enabled);
                      }}
                    />

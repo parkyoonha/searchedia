@@ -1,5 +1,6 @@
 // AI Service with Groq, Gemini, and OpenAI fallback
 // Implements caching and free tier optimization
+import { logger } from '../lib/logger';
 
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -49,7 +50,7 @@ function resetDailyCounters() {
     geminiCallsToday = 0;
     openaiCallsToday = 0;
     lastResetDate = today;
-    console.log('[AI] 🔄 Daily counters reset');
+    logger.log('[AI] 🔄 Daily counters reset');
   }
 }
 
@@ -74,7 +75,7 @@ function getCached(cacheKey: string): OptimizedKeywords | null {
   }
 
   entry.hits++;
-  console.log(`[AI] ✅ Cache hit! (${entry.hits} hits, age: ${Math.round(age / 1000 / 60)}min)`);
+  logger.log(`[AI] ✅ Cache hit! (${entry.hits} hits, age: ${Math.round(age / 1000 / 60)}min)`);
 
   return {
     ...entry.result,
@@ -99,7 +100,7 @@ function saveToCache(cacheKey: string, result: OptimizedKeywords) {
     hits: 0
   });
 
-  console.log(`[AI] 💾 Cached result (cache size: ${cache.size})`);
+  logger.log(`[AI] 💾 Cached result (cache size: ${cache.size})`);
 }
 
 /**
@@ -168,18 +169,18 @@ Return ONLY ONE set of keywords (space-separated):`;
 async function callGroq(prompt: string): Promise<string | null> {
   try {
     if (!GROQ_API_KEY) {
-      console.log('[AI] ⚠️ Groq API key not configured');
+      logger.log('[AI] ⚠️ Groq API key not configured');
       return null;
     }
 
     resetDailyCounters();
 
     if (groqCallsToday >= GROQ_DAILY_LIMIT) {
-      console.log('[AI] ⚠️ Groq daily limit reached');
+      logger.log('[AI] ⚠️ Groq daily limit reached');
       return null;
     }
 
-    console.log(`[AI] 🚀 Calling Groq (${groqCallsToday + 1}/${GROQ_DAILY_LIMIT} today)...`);
+    logger.log(`[AI] 🚀 Calling Groq (${groqCallsToday + 1}/${GROQ_DAILY_LIMIT} today)...`);
 
     const response = await fetch(GROQ_API_URL, {
       method: 'POST',
@@ -216,7 +217,7 @@ async function callGroq(prompt: string): Promise<string | null> {
 
     if (result) {
       groqCallsToday++;
-      console.log('[AI] ✅ Groq success');
+      logger.log('[AI] ✅ Groq success');
     }
 
     return result;
@@ -232,18 +233,18 @@ async function callGroq(prompt: string): Promise<string | null> {
 async function callGemini(prompt: string): Promise<string | null> {
   try {
     if (!GEMINI_API_KEY) {
-      console.log('[AI] ⚠️ Gemini API key not configured');
+      logger.log('[AI] ⚠️ Gemini API key not configured');
       return null;
     }
 
     resetDailyCounters();
 
     if (geminiCallsToday >= GEMINI_DAILY_LIMIT) {
-      console.log('[AI] ⚠️ Gemini daily limit reached');
+      logger.log('[AI] ⚠️ Gemini daily limit reached');
       return null;
     }
 
-    console.log(`[AI] 🚀 Calling Gemini (${geminiCallsToday + 1}/${GEMINI_DAILY_LIMIT} today)...`);
+    logger.log(`[AI] 🚀 Calling Gemini (${geminiCallsToday + 1}/${GEMINI_DAILY_LIMIT} today)...`);
 
     const systemInstruction = 'You are an expert at creating diverse visual scene descriptions for stock photo searches. ALWAYS describe a complete action scene, never just list nouns. Output only the keyword phrase.';
 
@@ -281,7 +282,7 @@ async function callGemini(prompt: string): Promise<string | null> {
 
     if (result) {
       geminiCallsToday++;
-      console.log('[AI] ✅ Gemini success');
+      logger.log('[AI] ✅ Gemini success');
     }
 
     return result;
@@ -297,11 +298,11 @@ async function callGemini(prompt: string): Promise<string | null> {
 async function callOpenAI(prompt: string): Promise<string | null> {
   try {
     if (!OPENAI_API_KEY) {
-      console.log('[AI] ⚠️ OpenAI API key not configured');
+      logger.log('[AI] ⚠️ OpenAI API key not configured');
       return null;
     }
 
-    console.log('[AI] 🚀 Calling OpenAI (fallback)...');
+    logger.log('[AI] 🚀 Calling OpenAI (fallback)...');
 
     const response = await fetch(OPENAI_API_URL, {
       method: 'POST',
@@ -338,7 +339,7 @@ async function callOpenAI(prompt: string): Promise<string | null> {
 
     if (result) {
       openaiCallsToday++;
-      console.log('[AI] ✅ OpenAI success');
+      logger.log('[AI] ✅ OpenAI success');
     }
 
     return result;
@@ -358,7 +359,7 @@ export async function optimizeKeywordsWithAI(
   excludeResult?: string
 ): Promise<OptimizedKeywords | null> {
   try {
-    console.log('[AI] 🔍 Starting optimization:', {
+    logger.log('[AI] 🔍 Starting optimization:', {
       description,
       word,
       excluding: excludeResult || 'none'
@@ -426,7 +427,7 @@ export async function optimizeKeywordsWithAI(
     // Save to cache
     saveToCache(cacheKey, result);
 
-    console.log('[AI] ✅ Optimization complete:', {
+    logger.log('[AI] ✅ Optimization complete:', {
       provider,
       original: description,
       phrase,
@@ -475,7 +476,7 @@ export function getUsageStats() {
  */
 export function clearCache() {
   cache.clear();
-  console.log('[AI] 🗑️ Cache cleared');
+  logger.log('[AI] 🗑️ Cache cleared');
 }
 
 /**

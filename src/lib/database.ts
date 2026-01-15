@@ -1,5 +1,6 @@
 import { Project, Folder } from '../App';
 import { supabase } from './supabase';
+import { logger } from './logger';
 
 /**
  * Load all projects for the current user from Supabase
@@ -8,11 +9,11 @@ export async function loadProjectsFromDB(): Promise<Project[]> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
-      console.log('[DB] No active session for loading projects');
+      logger.log('[DB] No active session for loading projects');
       return [];
     }
 
-    console.log('[DB] Loading projects for user:', session.user.id);
+    logger.log('[DB] Loading projects for user:', session.user.id);
 
     const { data, error } = await supabase
       .from('projects')
@@ -25,7 +26,7 @@ export async function loadProjectsFromDB(): Promise<Project[]> {
       return [];
     }
 
-    console.log('[DB] Loaded projects from DB:', data?.length || 0, 'projects');
+    logger.log('[DB] Loaded projects from DB:', data?.length || 0, 'projects');
 
     // Map DB structure to Project interface (folder_id -> folderId)
     const projects: Project[] = (data || []).map(p => ({
@@ -64,7 +65,7 @@ export async function saveProjectToDB(project: Project, userId?: string): Promis
       updated_at: new Date().toISOString()
     };
 
-    console.log('[DB] Attempting to save project:', project.id, 'with', project.items.length, 'items');
+    logger.log('[DB] Attempting to save project:', project.id, 'with', project.items.length, 'items');
 
     const { data, error } = await supabase
       .from('projects')
@@ -79,7 +80,7 @@ export async function saveProjectToDB(project: Project, userId?: string): Promis
       throw new Error(`Failed to save project ${project.id}: ${error.message}`);
     }
 
-    console.log(`[DB] Project ${project.id} saved successfully with`, project.items.length, 'items');
+    logger.log(`[DB] Project ${project.id} saved successfully with`, project.items.length, 'items');
     return true;
   } catch (error) {
     console.error('[DB] Error in saveProjectToDB:', error);
@@ -100,7 +101,7 @@ export async function deleteProjectFromDB(projectId: string, userId?: string): P
       return false;
     }
 
-    console.log('Deleting project:', { projectId, userId: currentUserId });
+    logger.log('Deleting project:', { projectId, userId: currentUserId });
 
     const { error } = await supabase
       .from('projects')
@@ -113,7 +114,7 @@ export async function deleteProjectFromDB(projectId: string, userId?: string): P
       return false;
     }
 
-    console.log('Project deleted successfully:', projectId);
+    logger.log('Project deleted successfully:', projectId);
     return true;
   } catch (error) {
     console.error('Error deleting project:', error);
@@ -134,7 +135,7 @@ export async function syncProjectsToDB(projects: Project[], userId?: string): Pr
       return false;
     }
 
-    console.log(`[DB] Syncing ${projects.length} projects for user ${currentUserId}`);
+    logger.log(`[DB] Syncing ${projects.length} projects for user ${currentUserId}`);
 
     // Get current projects from DB
     const { data: dbProjects } = await supabase
@@ -148,7 +149,7 @@ export async function syncProjectsToDB(projects: Project[], userId?: string): Pr
       const projectsToDelete = dbProjects.filter(p => !localProjectIds.has(p.id));
 
       if (projectsToDelete.length > 0) {
-        console.log(`[DB] Deleting ${projectsToDelete.length} projects that are no longer in local state`);
+        logger.log(`[DB] Deleting ${projectsToDelete.length} projects that are no longer in local state`);
         await Promise.all(
           projectsToDelete.map(p => deleteProjectFromDB(p.id, currentUserId))
         );
@@ -160,7 +161,7 @@ export async function syncProjectsToDB(projects: Project[], userId?: string): Pr
     const results = await Promise.all(promises);
 
     const successCount = results.filter(r => r).length;
-    console.log(`[DB] Successfully synced ${successCount}/${projects.length} projects`);
+    logger.log(`[DB] Successfully synced ${successCount}/${projects.length} projects`);
     return true;
   } catch (error) {
     console.error('[DB] Error syncing projects:', error);
@@ -175,11 +176,11 @@ export async function loadFoldersFromDB(): Promise<Folder[]> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
-      console.log('[DB] No active session for loading folders');
+      logger.log('[DB] No active session for loading folders');
       return [];
     }
 
-    console.log('[DB] Loading folders for user:', session.user.id);
+    logger.log('[DB] Loading folders for user:', session.user.id);
 
     const { data, error } = await supabase
       .from('folders')
@@ -192,7 +193,7 @@ export async function loadFoldersFromDB(): Promise<Folder[]> {
       return [];
     }
 
-    console.log('[DB] Loaded folders from DB:', data?.length || 0, 'folders');
+    logger.log('[DB] Loaded folders from DB:', data?.length || 0, 'folders');
 
     // Map DB structure to Folder interface
     const folders: Folder[] = (data || []).map(f => ({
@@ -230,7 +231,7 @@ export async function saveFolderToDB(folder: Folder, userId?: string): Promise<b
       created_at: new Date(folder.createdAt).toISOString()
     };
 
-    console.log('[DB] Attempting to save folder:', folder.id);
+    logger.log('[DB] Attempting to save folder:', folder.id);
 
     const { data, error } = await supabase
       .from('folders')
@@ -244,7 +245,7 @@ export async function saveFolderToDB(folder: Folder, userId?: string): Promise<b
       return false;
     }
 
-    console.log(`[DB] Folder ${folder.id} saved successfully`);
+    logger.log(`[DB] Folder ${folder.id} saved successfully`);
     return true;
   } catch (error) {
     console.error('[DB] Error in saveFolderToDB:', error);
@@ -265,7 +266,7 @@ export async function syncFoldersToDB(folders: Folder[], userId?: string): Promi
       return false;
     }
 
-    console.log(`[DB] Syncing ${folders.length} folders for user ${currentUserId}`);
+    logger.log(`[DB] Syncing ${folders.length} folders for user ${currentUserId}`);
 
     // Get current folders from DB
     const { data: dbFolders } = await supabase
@@ -279,7 +280,7 @@ export async function syncFoldersToDB(folders: Folder[], userId?: string): Promi
       const foldersToDelete = dbFolders.filter(f => !localFolderIds.has(f.id));
 
       if (foldersToDelete.length > 0) {
-        console.log(`[DB] Deleting ${foldersToDelete.length} folders that are no longer in local state`);
+        logger.log(`[DB] Deleting ${foldersToDelete.length} folders that are no longer in local state`);
         await Promise.all(
           foldersToDelete.map(f => deleteFolderFromDB(f.id, currentUserId))
         );
@@ -291,7 +292,7 @@ export async function syncFoldersToDB(folders: Folder[], userId?: string): Promi
     const results = await Promise.all(promises);
 
     const successCount = results.filter(r => r).length;
-    console.log(`[DB] Successfully synced ${successCount}/${folders.length} folders`);
+    logger.log(`[DB] Successfully synced ${successCount}/${folders.length} folders`);
     return true;
   } catch (error) {
     console.error('[DB] Error syncing folders:', error);
@@ -312,7 +313,7 @@ export async function deleteFolderFromDB(folderId: string, userId?: string): Pro
       return false;
     }
 
-    console.log('[DB] Deleting folder:', folderId);
+    logger.log('[DB] Deleting folder:', folderId);
 
     const { error } = await supabase
       .from('folders')
@@ -325,7 +326,7 @@ export async function deleteFolderFromDB(folderId: string, userId?: string): Pro
       return false;
     }
 
-    console.log('[DB] Folder deleted successfully:', folderId);
+    logger.log('[DB] Folder deleted successfully:', folderId);
     return true;
   } catch (error) {
     console.error('[DB] Error deleting folder:', error);

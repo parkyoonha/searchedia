@@ -1,5 +1,6 @@
 // Unsplash API Service
 import { enhanceSearchQuery } from './searchUtils';
+import { logger } from '../lib/logger';
 
 const ACCESS_KEY = import.meta.env.VITE_UNSPLASH_ACCESS_KEY;
 const API_BASE_URL = 'https://api.unsplash.com';
@@ -40,8 +41,8 @@ export async function searchUnsplashPhotos(
 ): Promise<UnsplashImage[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    console.log('[Unsplash] Searching for:', enhancedQuery);
-    console.log('[Unsplash] Access Key:', ACCESS_KEY ? 'Set' : 'Missing');
+    logger.log('[Unsplash] Searching for:', enhancedQuery);
+    logger.log('[Unsplash] Access Key:', ACCESS_KEY ? 'Set' : 'Missing');
 
     if (!ACCESS_KEY) {
       console.error('[Unsplash] Access key is missing');
@@ -69,7 +70,7 @@ export async function searchUnsplashPhotos(
     }
 
     const data: UnsplashSearchResponse = await response.json();
-    console.log('[Unsplash] Found', data.results.length, 'images');
+    logger.log('[Unsplash] Found', data.results.length, 'images');
 
     return data.results || [];
   } catch (error) {
@@ -96,7 +97,7 @@ export async function getRandomUnsplashPhoto(
     const images = await searchUnsplashPhotos(query, { perPage: 20, page });
 
     if (images.length === 0) {
-      console.warn('[Unsplash] No images found for query:', query);
+      logger.warn('[Unsplash] No images found for query:', query);
       return null;
     }
 
@@ -104,7 +105,7 @@ export async function getRandomUnsplashPhoto(
     const unusedImages = images.filter(img => !excludeUrls.includes(img.urls.regular));
 
     if (unusedImages.length === 0) {
-      console.warn('[Unsplash] All images on page', page, 'have been used');
+      logger.warn('[Unsplash] All images on page', page, 'have been used');
       return null;
     }
 
@@ -119,7 +120,7 @@ export async function getRandomUnsplashPhoto(
       photographerUrl: `https://unsplash.com/@${selectedImage.user.username}`
     };
 
-    console.log('[Unsplash] Successfully selected image from page', page, ':', result);
+    logger.log('[Unsplash] Successfully selected image from page', page, ':', result);
 
     return result;
   } catch (error) {

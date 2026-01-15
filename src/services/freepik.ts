@@ -1,5 +1,6 @@
 // Freepik API Service
 import { enhanceSearchQuery } from './searchUtils';
+import { logger } from '../lib/logger';
 
 const API_KEY = import.meta.env.VITE_FREEPIK_API_KEY;
 const API_BASE_URL = 'https://api.freepik.com/v1';
@@ -57,7 +58,7 @@ export async function searchFreepikImages(
 ): Promise<FreepikResource[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    console.log('[Freepik] Searching for images:', enhancedQuery);
+    logger.log('[Freepik] Searching for images:', enhancedQuery);
 
     if (!API_KEY) {
       console.error('[Freepik] API key is missing');
@@ -83,7 +84,7 @@ export async function searchFreepikImages(
     }
 
     const data: FreepikSearchResponse = await response.json();
-    console.log('[Freepik] Found', data.data.length, 'images');
+    logger.log('[Freepik] Found', data.data.length, 'images');
 
     return data.data || [];
   } catch (error) {
@@ -104,7 +105,7 @@ export async function getRandomFreepikImage(
     const images = await searchFreepikImages(query, { perPage: 20, page });
 
     if (images.length === 0) {
-      console.warn('[Freepik] No images found for query:', query);
+      logger.warn('[Freepik] No images found for query:', query);
       return null;
     }
 
@@ -112,7 +113,7 @@ export async function getRandomFreepikImage(
     const unusedImages = images.filter(img => !excludeUrls.includes(img.image.source.url));
 
     if (unusedImages.length === 0) {
-      console.warn('[Freepik] All images on page', page, 'have been used');
+      logger.warn('[Freepik] All images on page', page, 'have been used');
       return null;
     }
 
@@ -127,7 +128,7 @@ export async function getRandomFreepikImage(
       photographerUrl: `https://www.freepik.com/author/${selectedImage.author.id}`
     };
 
-    console.log('[Freepik] Successfully selected image:', result);
+    logger.log('[Freepik] Successfully selected image:', result);
 
     return result;
   } catch (error) {
@@ -148,7 +149,7 @@ export async function searchFreepikVideos(
 ): Promise<FreepikResource[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    console.log('[Freepik] Searching for videos:', enhancedQuery);
+    logger.log('[Freepik] Searching for videos:', enhancedQuery);
 
     if (!API_KEY) {
       console.error('[Freepik] API key is missing');
@@ -175,7 +176,7 @@ export async function searchFreepikVideos(
     }
 
     const data: FreepikSearchResponse = await response.json();
-    console.log('[Freepik] Found', data.data.length, 'videos');
+    logger.log('[Freepik] Found', data.data.length, 'videos');
 
     return data.data || [];
   } catch (error) {
@@ -196,7 +197,7 @@ export async function getRandomFreepikVideo(
     const videos = await searchFreepikVideos(query, { perPage: 20, page });
 
     if (videos.length === 0) {
-      console.warn('[Freepik] No videos found for query:', query);
+      logger.warn('[Freepik] No videos found for query:', query);
       return null;
     }
 
@@ -204,7 +205,7 @@ export async function getRandomFreepikVideo(
     const unusedVideos = videos.filter(video => !excludeUrls.includes(video.image.source.url));
 
     if (unusedVideos.length === 0) {
-      console.warn('[Freepik] All videos on page', page, 'have been used');
+      logger.warn('[Freepik] All videos on page', page, 'have been used');
       return null;
     }
 
@@ -219,7 +220,7 @@ export async function getRandomFreepikVideo(
       photographerUrl: `https://www.freepik.com/author/${selectedVideo.author.id}`
     };
 
-    console.log('[Freepik] Successfully selected video:', result);
+    logger.log('[Freepik] Successfully selected video:', result);
 
     return result;
   } catch (error) {

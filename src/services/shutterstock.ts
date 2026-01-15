@@ -1,5 +1,6 @@
 // Shutterstock API Service
 import { enhanceSearchQuery } from './searchUtils';
+import { logger } from '../lib/logger';
 
 const CLIENT_ID = import.meta.env.VITE_SHUTTERSTOCK_CLIENT_ID;
 const CLIENT_SECRET = import.meta.env.VITE_SHUTTERSTOCK_CLIENT_SECRET;
@@ -68,7 +69,7 @@ export async function searchShutterstockImages(
 ): Promise<ShutterstockImage[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    console.log('[Shutterstock] Searching for images:', enhancedQuery);
+    logger.log('[Shutterstock] Searching for images:', enhancedQuery);
     const accessToken = await getAccessToken();
 
     const params = new URLSearchParams({
@@ -108,14 +109,14 @@ export async function searchShutterstockImages(
  */
 export async function getRandomShutterstockImage(query: string): Promise<string | null> {
   try {
-    console.log('[Shutterstock] Fetching image for query:', query);
-    console.log('[Shutterstock] Client ID:', CLIENT_ID ? 'Set' : 'Missing');
-    console.log('[Shutterstock] Client Secret:', CLIENT_SECRET ? 'Set' : 'Missing');
+    logger.log('[Shutterstock] Fetching image for query:', query);
+    logger.log('[Shutterstock] Client ID:', CLIENT_ID ? 'Set' : 'Missing');
+    logger.log('[Shutterstock] Client Secret:', CLIENT_SECRET ? 'Set' : 'Missing');
 
     const images = await searchShutterstockImages(query, { perPage: 20 });
 
     if (images.length === 0) {
-      console.warn('[Shutterstock] No images found for query:', query);
+      logger.warn('[Shutterstock] No images found for query:', query);
       return null;
     }
 
@@ -124,7 +125,7 @@ export async function getRandomShutterstockImage(query: string): Promise<string 
     const selectedImage = images[randomIndex];
 
     const imageUrl = selectedImage.assets.preview.url || selectedImage.assets.large_thumb.url;
-    console.log('[Shutterstock] Successfully fetched image:', imageUrl);
+    logger.log('[Shutterstock] Successfully fetched image:', imageUrl);
 
     // Return the preview URL
     return imageUrl;

@@ -8,6 +8,7 @@ import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
 import { toast } from 'sonner';
+import { logger } from '../lib/logger';
 import { Check, X, MessageSquare, ExternalLink, AlertCircle, ShieldAlert, CheckSquare } from 'lucide-react';
 import { BulkItem } from './BulkGenerator';
 
@@ -48,10 +49,10 @@ export function ReviewPage() {
 
   useEffect(() => {
     try {
-      console.log('[ReviewPage] Loading session with token:', token);
+      logger.log('[ReviewPage] Loading session with token:', token);
 
       if (!token) {
-        console.log('[ReviewPage] No token provided');
+        logger.log('[ReviewPage] No token provided');
         setError('Invalid review link');
         setLoading(false);
         return;
@@ -59,16 +60,16 @@ export function ReviewPage() {
 
       // Load review session from localStorage
       const sessionsStr = localStorage.getItem('reviewSessions');
-      console.log('[ReviewPage] localStorage reviewSessions:', sessionsStr);
+      logger.log('[ReviewPage] localStorage reviewSessions:', sessionsStr);
 
       const sessions = JSON.parse(sessionsStr || '[]');
-      console.log('[ReviewPage] Parsed sessions:', sessions.length);
+      logger.log('[ReviewPage] Parsed sessions:', sessions.length);
 
       const foundSession = sessions.find((s: ReviewSession) => s.shareToken === token);
-      console.log('[ReviewPage] Found session:', !!foundSession);
+      logger.log('[ReviewPage] Found session:', !!foundSession);
 
       if (!foundSession) {
-        console.log('[ReviewPage] Session not found for token:', token);
+        logger.log('[ReviewPage] Session not found for token:', token);
         setError('Review session not found');
         setLoading(false);
         return;
@@ -77,7 +78,7 @@ export function ReviewPage() {
       // Check expiration
       const now = Date.now();
       if (now > foundSession.expiresAt) {
-        console.log('[ReviewPage] Session expired');
+        logger.log('[ReviewPage] Session expired');
         setError('This review link has expired');
         setLoading(false);
         return;
@@ -85,7 +86,7 @@ export function ReviewPage() {
 
       // Check view count
       if (foundSession.viewCount >= foundSession.maxViews) {
-        console.log('[ReviewPage] Max views reached');
+        logger.log('[ReviewPage] Max views reached');
         setError('This review link has reached its maximum view limit');
         setLoading(false);
         return;
@@ -101,7 +102,7 @@ export function ReviewPage() {
       );
       localStorage.setItem('reviewSessions', JSON.stringify(updatedSessions));
 
-      console.log('[ReviewPage] Session loaded successfully');
+      logger.log('[ReviewPage] Session loaded successfully');
       setSession(foundSession);
       setLoading(false);
     } catch (err) {

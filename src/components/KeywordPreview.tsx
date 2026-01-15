@@ -3,6 +3,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Sparkles, Plus, Wand2, Loader2, Edit3, Check, RefreshCw, Crop, X } from 'lucide-react';
 import { optimizeKeywordsWithAI, isAIConfigured } from '../services/ai';
+import { logger } from '../lib/logger';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
@@ -194,14 +195,14 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
 
       // Don't overwrite keywords if isolated background is active
       if (isolatedBackground) {
-        console.log('[KeywordPreview] AI disabled but isolated background is active, preserving keywords');
+        logger.log('[KeywordPreview] AI disabled but isolated background is active, preserving keywords');
         return;
       }
 
       if (text || word) {
         // Use manual extraction
         const manualKeywords = extractedKeywords.join(' ');
-        console.log('[KeywordPreview] AI disabled, using manual extraction:', manualKeywords);
+        logger.log('[KeywordPreview] AI disabled, using manual extraction:', manualKeywords);
         setAiOptimized(manualKeywords);
         setEditedQuery(manualKeywords);
         onKeywordsGenerated?.(manualKeywords);
@@ -213,7 +214,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
       const wasManual = lastProcessedText.includes('-manual');
 
       if (wasManual || !aiOptimized) {
-        console.log('[KeywordPreview] AI re-enabled, regenerating keywords immediately');
+        logger.log('[KeywordPreview] AI re-enabled, regenerating keywords immediately');
         setIsOptimizing(true);
 
         // Immediately generate AI keywords
@@ -223,7 +224,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
             setEditedQuery(result.searchQuery);
             setLastProcessedText(`${text}-${word}`);
             onKeywordsGenerated?.(result.searchQuery);
-            console.log('[KeywordPreview] Regenerated AI keywords:', result.searchQuery);
+            logger.log('[KeywordPreview] Regenerated AI keywords:', result.searchQuery);
           }
           setIsOptimizing(false);
         }).catch(error => {
@@ -264,21 +265,21 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
 
     // Skip auto-regeneration if AI keywords already exist
     if (aiOptimized && aiOptimized.trim().length > 0) {
-      console.log('[KeywordPreview] AI keywords already exist, skipping auto-regeneration');
+      logger.log('[KeywordPreview] AI keywords already exist, skipping auto-regeneration');
       return;
     }
 
     const timer = setTimeout(async () => {
       // Double-check enableAI before making API call
       if (!enableAI) {
-        console.log('[KeywordPreview] AI disabled during timeout, skipping optimization');
+        logger.log('[KeywordPreview] AI disabled during timeout, skipping optimization');
         return;
       }
 
       // Check AI usage limit (50 per day)
       const { allowed, remaining } = checkAIUsageLimit();
       if (!allowed) {
-        console.log('[KeywordPreview] AI daily limit reached');
+        logger.log('[KeywordPreview] AI daily limit reached');
         toast.error('AI context daily limit reached (50/day). Try again tomorrow or use manual mode.');
         setIsOptimizing(false);
         return;
@@ -300,7 +301,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
         setLastProcessedText(currentTextKey);
         // Notify parent component about generated keywords
         onKeywordsGenerated?.(result.searchQuery);
-        console.log('[KeywordPreview] Generated new keywords:', result.searchQuery);
+        logger.log('[KeywordPreview] Generated new keywords:', result.searchQuery);
         if (remaining - 1 <= 10) {
           toast.info(`AI context: ${remaining - 1} uses remaining today`);
         }
@@ -328,7 +329,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
     setLastProcessedText(`${text}-${word}`); // Prevent auto-regeneration
     onKeywordsGenerated?.(editedQuery);
     setIsEditing(false);
-    console.log('[KeywordPreview] Manually edited keywords:', editedQuery);
+    logger.log('[KeywordPreview] Manually edited keywords:', editedQuery);
   };
 
   const handleCancelEdit = () => {
@@ -363,7 +364,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
       // Use same format as auto-optimization to prevent re-triggering
       setLastProcessedText(`${text}-${word}`);
       onKeywordsGenerated?.(result.searchQuery);
-      console.log('[KeywordPreview] Regenerated new variation:', {
+      logger.log('[KeywordPreview] Regenerated new variation:', {
         previous: aiOptimized,
         new: result.searchQuery
       });
@@ -392,7 +393,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
       // Switching to manual mode
       if (text || word) {
         const manualKeywords = extractedKeywords.join(' ');
-        console.log('[KeywordPreview] Switched to manual mode:', manualKeywords);
+        logger.log('[KeywordPreview] Switched to manual mode:', manualKeywords);
         setAiOptimized(manualKeywords);
         setEditedQuery(manualKeywords);
         onKeywordsGenerated?.(manualKeywords);
@@ -409,7 +410,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
           return;
         }
 
-        console.log('[KeywordPreview] Switched to AI mode, triggering optimization');
+        logger.log('[KeywordPreview] Switched to AI mode, triggering optimization');
         setIsOptimizing(true);
 
         // Increment usage counter
@@ -426,7 +427,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
           setEditedQuery(result.searchQuery);
           setLastProcessedText(`${text}-${word}`);
           onKeywordsGenerated?.(result.searchQuery);
-          console.log('[KeywordPreview] AI optimization complete:', result.searchQuery);
+          logger.log('[KeywordPreview] AI optimization complete:', result.searchQuery);
           if (remaining - 1 <= 10) {
             toast.info(`AI context: ${remaining - 1} uses remaining today`);
           }
@@ -520,9 +521,9 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
               onClick={() => {
-                console.log('[KeywordPreview] Isolated BG button clicked, current state:', isolatedBackground);
+                logger.log('[KeywordPreview] Isolated BG button clicked, current state:', isolatedBackground);
                 const newValue = !isolatedBackground;
-                console.log('[KeywordPreview] New value will be:', newValue);
+                logger.log('[KeywordPreview] New value will be:', newValue);
                 onIsolatedBackgroundChange?.(newValue);
                 if (newValue) {
                   // When enabling isolated background, always save current keywords
@@ -531,21 +532,21 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
                     .trim()
                     .replace(/\s+/g, ' '); // Normalize whitespace
                   setSavedKeywordsBeforeIsolatedBg(currentKeywords);
-                  console.log('[KeywordPreview] ENABLING isolated BG - Saved keywords:', currentKeywords);
+                  logger.log('[KeywordPreview] ENABLING isolated BG - Saved keywords:', currentKeywords);
 
                   // Then set keywords to "word isolated background"
                   const isolatedKeywords = `${word} isolated background`;
-                  console.log('[KeywordPreview] Setting isolated keywords:', isolatedKeywords);
+                  logger.log('[KeywordPreview] Setting isolated keywords:', isolatedKeywords);
                   setAiOptimized(isolatedKeywords);
                   setEditedQuery(isolatedKeywords);
                   onKeywordsGenerated?.(isolatedKeywords);
-                  console.log('[KeywordPreview] Called onKeywordsGenerated with:', isolatedKeywords);
+                  logger.log('[KeywordPreview] Called onKeywordsGenerated with:', isolatedKeywords);
                 } else {
                   // When disabling, restore saved keywords (prefer saved, fallback to manual extraction)
                   const restoreKeywords = savedKeywordsBeforeIsolatedBg && savedKeywordsBeforeIsolatedBg.trim()
                     ? savedKeywordsBeforeIsolatedBg
                     : extractedKeywords.join(' ');
-                  console.log('[KeywordPreview] DISABLING isolated BG - Restoring keywords:', restoreKeywords, { saved: savedKeywordsBeforeIsolatedBg, manual: extractedKeywords.join(' ') });
+                  logger.log('[KeywordPreview] DISABLING isolated BG - Restoring keywords:', restoreKeywords, { saved: savedKeywordsBeforeIsolatedBg, manual: extractedKeywords.join(' ') });
                   onKeywordsGenerated?.(restoreKeywords);
                   setAiOptimized(restoreKeywords);
                   setEditedQuery(restoreKeywords);
