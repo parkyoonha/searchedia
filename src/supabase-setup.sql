@@ -60,6 +60,7 @@
   -- Create folders table
   CREATE TABLE folders (
     id TEXT PRIMARY KEY,
+    
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     name TEXT NOT NULL,
     parent_id TEXT,

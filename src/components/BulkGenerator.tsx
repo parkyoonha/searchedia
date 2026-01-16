@@ -156,6 +156,7 @@ export interface BulkItem {
   reviewHidden?: boolean; // Review result hidden by creator
   reviewCompleted?: boolean; // Review result marked as completed (permanently removes review data)
   reviewCompletedAt?: number; // Timestamp when review was marked complete
+  reviewShareToken?: string; // Share token for the current review session (to filter old reviews after URL regeneration)
   previousReviewStatus?: 'approved' | 'rejected'; // Previous review status for re-review tracking
   usedImageUrls?: string[]; // Track used image URLs to prevent duplicates
   currentPage?: number; // Current page number for API pagination (per source)
@@ -1081,12 +1082,13 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       return;
     }
 
-    // Reset reviewCompleted flag for all items in the session so new reviews can be displayed
+    // Reset review data for all items in the session so new reviews can be collected fresh
     // This allows re-requesting reviews after bulk complete
+    // Save the new shareToken to only show reviews from this session
     const itemIdsInSession = new Set(itemsToShare.map(item => item.id));
     setItems(prev => prev.map(item =>
       itemIdsInSession.has(item.id)
-        ? { ...item, reviewCompleted: false, reviewCompletedAt: undefined }
+        ? { ...item, reviewCompleted: false, reviewCompletedAt: undefined, reviewStatus: undefined, reviewComment: undefined, reviewShareToken: token }
         : item
     ));
 
@@ -1298,6 +1300,12 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     // Always use projects state to ensure we have the latest data
     const targetItems = currentProject?.items || [];
     const item = targetItems.find((i: any) => i.id === itemId);
+
+    // 일괄확인완료된 아이템은 리뷰 결과 표시하지 않음
+    if (item?.reviewCompleted) {
+      return null;
+    }
+
     if (item?.reviewStatus && item.reviewStatus !== 'pending') {
       return {
         status: item.reviewStatus,
@@ -1306,10 +1314,20 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       };
     }
 
+    // reviewSessions에서 검색
+    // reviewShareToken이 있으면 해당 토큰의 세션만 검색 (URL 재생성 후 새 리뷰만 표시)
+    const itemShareToken = item?.reviewShareToken;
+
     // Filter completed review sessions for target project or folder
     const completedSessions = reviewSessions
       .filter((s: any) => {
         if (!s || s.status !== 'completed') return false;
+
+        // reviewShareToken이 있으면 해당 토큰의 세션만 검색
+        if (itemShareToken) {
+          return s.share_token === itemShareToken;
+        }
+
         if (s.review_type === 'project') return s.project_id === targetProjectId;
         if (s.review_type === 'folder') {
           // Match if viewing the folder directly OR if target project belongs to the reviewed folder
@@ -1597,7 +1615,10 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
           return {
             ...item,
             reviewCompleted: true,
-            reviewCompletedAt: Date.now()
+            reviewCompletedAt: Date.now(),
+            reviewStatus: undefined,
+            reviewComment: undefined,
+            reviewShareToken: undefined
           };
         }
         return item;
@@ -3123,10 +3144,10 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
       {/* Left: Settings Panel */}
       {!reviewMode?.isReviewMode && (
-      <div className={`flex-shrink-0 h-full transition-all duration-300 ease-in-out
+      <div className={`flex-shrink-0 h-full transition-all duration-300 ease-in-out overflow-hidden
         ${mobileSidebarOpen ? 'fixed top-0 left-0 z-50 translate-x-0 w-[332px]' : 'fixed top-0 left-0 z-50 -translate-x-full w-[332px]'}
-        ${desktopSidebarOpen ? 'md:relative md:translate-x-0 md:w-64' : 'md:relative md:translate-x-0 md:w-0 md:overflow-hidden'}`}>
-        <div className="h-full overflow-y-auto flex flex-col w-[332px] md:w-full">
+        ${desktopSidebarOpen ? 'md:relative md:translate-x-0 md:w-64' : 'md:relative md:translate-x-0 md:w-0'}`}>
+        <div className="h-full overflow-y-auto flex flex-col w-[332px] md:w-64">
           <Card className="border-slate-200 shadow-none bg-white flex flex-col h-full rounded-none border-y-0 border-l-0">
         {/* Header */}
         <div className="px-4 py-3 border-b border-slate-100 flex justify-end items-center">
