@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 @layer base {
+  html, body, * {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
   :root {
     --font-size: 16px;
     --background: #ffffff;

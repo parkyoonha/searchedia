@@ -793,7 +793,7 @@ export default function App() {
              {viewMode === 'landing' ? (
                <div className="relative h-full">
                  {/* Top bar for landing page */}
-                 <div className="absolute top-0 left-0 right-0 h-16 flex items-center justify-between px-8 z-10">
+                 <div className="absolute top-0 left-0 right-0 h-16 flex items-center justify-between pl-6 pr-[14px] md:px-8 z-10">
                    <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setViewMode('landing')}>
                      <span className="font-bold text-2xl tracking-tight text-slate-900" style={{ fontFamily: "'Inter', sans-serif" }}>Searchedia</span>
                    </div>

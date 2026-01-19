@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useIsMobile } from './ui/use-mobile';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -189,6 +190,7 @@ const StepContainer = ({
 };
 
 export function LandingWizard({ onComplete }: LandingWizardProps) {
+  const isMobile = useIsMobile();
   const [step, setStep] = useState(0);
   const [selections, setSelections] = useState<{
     mediaType: 'image' | 'video';
@@ -698,12 +700,12 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                 </h1>
 
                 {/* Buttons (horizontal on desktop, vertical on mobile) */}
-                <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex flex-col md:flex-row gap-4 items-center">
                     <motion.div
-                        initial={{ width: 210 }}
-                        animate={{ width: 310 }}
-                        transition={{ duration: 0.5, delay: 1.5 }}
-                        className="overflow-visible w-full md:w-auto"
+                        initial={{ width: 235 }}
+                        animate={{ width: isMobile ? 290 : 329 }}
+                        transition={{ duration: 0.8, delay: 1.5, ease: [0.25, 0.1, 0.25, 1] }}
+                        className="overflow-hidden max-md:mx-auto"
                     >
                         <Button
                             size="lg"
@@ -718,7 +720,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 2.5, duration: 0.5 }}
-                        className="w-full md:w-auto relative"
+                        className="relative max-md:w-[290px] max-md:mx-auto md:w-auto"
                     >
                         <Button
                             size="lg"

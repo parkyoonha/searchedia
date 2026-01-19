@@ -3150,7 +3150,20 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         <div className="h-full overflow-y-auto flex flex-col w-[332px] md:w-64">
           <Card className="border-slate-200 shadow-none bg-white flex flex-col h-full rounded-none border-y-0 border-l-0">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-slate-100 flex justify-end items-center">
+        <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
+          {/* Mobile: Home Button with Searchedia Logo */}
+          <div
+            className="md:hidden flex items-center cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => {
+              setMobileSidebarOpen(false);
+              onCancel();
+            }}
+          >
+            <span className="font-bold text-xl tracking-tight text-slate-900" style={{ fontFamily: "Inter, sans-serif" }}>Searchedia</span>
+          </div>
+          {/* Desktop: Empty space for layout */}
+          <div className="hidden md:block" />
+
           {/* Desktop: Collapse Button */}
           <Button
             variant="ghost"

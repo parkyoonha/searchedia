@@ -554,7 +554,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
               }}
             >
               <Crop className="h-3 w-3" />
-              <span className="text-sm font-medium">Isolated BG</span>
+              <span className="text-sm font-medium">Isolate</span>
             </Button>
           )}
           {mode === 'ai' && aiOptimized && !isOptimizing && !isEditing && onRegenerateImage && (

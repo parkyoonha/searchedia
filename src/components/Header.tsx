@@ -118,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-16 border-b bg-white flex items-center justify-between px-8 shadow-sm z-10">
+    <header className="h-16 border-b bg-white flex items-center justify-between px-4 md:px-8 shadow-sm z-10">
       <div className="flex items-center gap-8 text-slate-500 text-sm">
         <div
           className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
@@ -205,7 +205,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
         )}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 max-md:mr-[-0.3cm]">
          {/* Existing User/Auth related UI */}
          {!user ? (
              <>
