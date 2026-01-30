@@ -1397,15 +1397,17 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     }
 
     try {
+      // Create new review session with single item
+      const token = generateShareToken();
+
       // Mark with previous status for tracking
       const itemWithPreviousStatus = {
         ...item,
         previousReviewStatus: item.reviewStatus,
-        reviewStatus: 'pending' as const
+        reviewStatus: 'pending' as const,
+        reviewShareToken: token // Update token to match new session
       };
 
-      // Create new review session with single item
-      const token = generateShareToken();
       const result = await createReviewSession(
         [itemWithPreviousStatus],
         token,
@@ -1417,6 +1419,16 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       );
 
       if (result.success) {
+        // Update item in state with new reviewShareToken
+        setItems(prev => prev.map(i =>
+          i.id === itemId
+            ? { ...i, reviewStatus: 'pending' as const, reviewShareToken: token, reviewComment: undefined }
+            : i
+        ));
+
+        // Reset filter to show all items (prevent item from disappearing)
+        setReviewFilter('all');
+
         const reviewLink = `${window.location.origin}/review/${token}`;
         setCurrentReviewLink(reviewLink);
         setShowShareForReviewDialog(true);
@@ -1457,17 +1469,20 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     }
 
     try {
+      // Create token first so we can use it in items
+      const token = generateShareToken();
+
       const itemsWithPreviousStatus = rejectedItems.map(item => {
         const reviewResult = getReviewResultsForItem(item.id);
         return {
           ...item,
           previousReviewStatus: reviewResult!.status,
-          reviewStatus: 'pending' as const
+          reviewStatus: 'pending' as const,
+          reviewShareToken: token // Update token to match new session
         };
       });
 
       // Create review session with all rejected items
-      const token = generateShareToken();
       const result = await createReviewSession(
         itemsWithPreviousStatus,
         token,
@@ -1479,6 +1494,17 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       );
 
       if (result.success) {
+        // Update items in state with new reviewShareToken
+        const rejectedItemIds = new Set(rejectedItems.map(i => i.id));
+        setItems(prev => prev.map(i =>
+          rejectedItemIds.has(i.id)
+            ? { ...i, reviewStatus: 'pending' as const, reviewShareToken: token, reviewComment: undefined }
+            : i
+        ));
+
+        // Reset filter to show all items (prevent items from disappearing)
+        setReviewFilter('all');
+
         const reviewLink = `${window.location.origin}/review/${token}`;
         setCurrentReviewLink(reviewLink);
         setShowShareForReviewDialog(true);
@@ -1493,7 +1519,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   };
 
   // Helper: Collect rejected items from folder
-  const collectRejectedItemsFromFolder = (folderId: string): BulkItem[] => {
+  const collectRejectedItemsFromFolder = (folderId: string, token?: string): BulkItem[] => {
     const folderProjects = projects.filter(p => p.folderId === folderId);
     const allRejectedItems: BulkItem[] = [];
 
@@ -1508,7 +1534,8 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
         projectId: project.id,
         projectName: project.name,
         previousReviewStatus: item.reviewStatus!,
-        reviewStatus: 'pending' as const
+        reviewStatus: 'pending' as const,
+        reviewShareToken: token // Update token to match new session
       }));
 
       allRejectedItems.push(...itemsWithProjectInfo);
@@ -1519,7 +1546,9 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   // Handler: Re-request review for all rejected items in folder
   const handleRequestFolderReReview = async (folderId: string) => {
-    const rejectedItems = collectRejectedItemsFromFolder(folderId);
+    // Generate token first
+    const token = generateShareToken();
+    const rejectedItems = collectRejectedItemsFromFolder(folderId, token);
 
     if (rejectedItems.length === 0) {
       toast.error('폴더 내 재요청할 거부 아이템이 없습니다');
@@ -1527,7 +1556,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     }
 
     try {
-      const token = generateShareToken();
       const result = await createReviewSession(
         rejectedItems,
         token,
@@ -1539,6 +1567,17 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
       );
 
       if (result.success) {
+        // Update items in all projects with new reviewShareToken
+        const rejectedItemIds = new Set(rejectedItems.map(i => i.id));
+        setItems(prev => prev.map(i =>
+          rejectedItemIds.has(i.id)
+            ? { ...i, reviewStatus: 'pending' as const, reviewShareToken: token, reviewComment: undefined }
+            : i
+        ));
+
+        // Reset filter to show all items (prevent items from disappearing)
+        setReviewFilter('all');
+
         const reviewLink = `${window.location.origin}/review/${token}`;
         setCurrentReviewLink(reviewLink);
         setShowShareForReviewDialog(true);
@@ -2727,8 +2766,13 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
   };
 
   const handleExtractImages = async () => {
-    // Filter items that have a word but NO image (exclude Landing generated ones or already generated ones)
-    const itemsToProcess = items.filter(i => i.word.trim() && !i.imageUrl);
+    // Filter items that have a word but NO image, AND match current mediaType tab
+    const itemsToProcess = items.filter(i => {
+      if (!i.word.trim() || i.imageUrl) return false;
+      // Filter by current mediaType tab
+      const itemMediaType = i.mediaType || 'image';
+      return itemMediaType === mediaType;
+    });
 
     if (itemsToProcess.length === 0) {
         toast.info("All items already have images or are empty");
@@ -3124,7 +3168,10 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
   const maxCreatedAt = (items || []).length > 0 ? Math.max(...(items || []).map(i => i.createdAt)) : 0;
   
-  const showVisuals = (items || []).some(i => i.status === 'processing' || i.status === 'completed' || !!i.imageUrl);
+  const showVisuals = (items || []).some(i => {
+    const itemMediaType = i.mediaType || 'image';
+    return itemMediaType === mediaType && (i.status === 'processing' || i.status === 'completed' || !!i.imageUrl);
+  });
 
   return (
     <>
@@ -3198,81 +3245,66 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
                 {/* Settings Section */}
                 <div className="space-y-3">
-                  <Label className="text-xs font-bold text-slate-400 uppercase">Settings</Label>
-
                   {/* Sources */}
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium text-slate-600">Sources</Label>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="w-full justify-between font-normal h-9 px-3 rounded bg-slate-50 border-slate-200 hover:bg-white hover:border-slate-300">
-                          {imageSource.length > 0 ? (
-                            <div className="flex gap-1 flex-wrap">
-                              {imageSource.slice(0, 2).map(s => (
-                                <Badge key={s} variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-slate-50 text-slate-700 border border-slate-200">
-                                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                                </Badge>
-                              ))}
-                              {imageSource.length > 2 && (
-                                <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-slate-500">
-                                  +{imageSource.length - 2}
-                                </Badge>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-slate-500 text-xs">Select sources...</span>
-                          )}
-                          <ChevronDown className="h-4 w-4 opacity-30 ml-2 shrink-0" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-[200px]" align="start">
-                        <DropdownMenuLabel>Free Sources</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {mediaType === 'image' ? (
-                          <>
-                            <DropdownMenuCheckboxItem
-                              checked={imageSource.includes('unsplash')}
-                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'unsplash'] : p.filter(s => s !== 'unsplash'))}
-                            >
-                              Unsplash
-                            </DropdownMenuCheckboxItem>
-                            <DropdownMenuCheckboxItem
-                              checked={imageSource.includes('pexels')}
-                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pexels'] : p.filter(s => s !== 'pexels'))}
-                            >
-                              Pexels
-                            </DropdownMenuCheckboxItem>
-                            <DropdownMenuCheckboxItem
-                              checked={imageSource.includes('pixabay')}
-                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pixabay'] : p.filter(s => s !== 'pixabay'))}
-                            >
-                              Pixabay
-                            </DropdownMenuCheckboxItem>
-                          </>
-                        ) : (
-                          <>
-                            <DropdownMenuCheckboxItem
-                              checked={imageSource.includes('pexels')}
-                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pexels'] : p.filter(s => s !== 'pexels'))}
-                            >
-                              Pexels
-                            </DropdownMenuCheckboxItem>
-                            <DropdownMenuCheckboxItem
-                              checked={imageSource.includes('pixabay')}
-                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'pixabay'] : p.filter(s => s !== 'pixabay'))}
-                            >
-                              Pixabay
-                            </DropdownMenuCheckboxItem>
-                            <DropdownMenuCheckboxItem
-                              checked={imageSource.includes('mixkit')}
-                              onCheckedChange={(c) => setImageSource(p => c ? [...p, 'mixkit'] : p.filter(s => s !== 'mixkit'))}
-                            >
-                              Mixkit
-                            </DropdownMenuCheckboxItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <div className="flex flex-wrap gap-1.5">
+                      {mediaType === 'image' ? (
+                        <>
+                          <Button
+                            variant={imageSource.includes('unsplash') ? 'default' : 'outline'}
+                            size="sm"
+                            className={`h-7 px-2.5 text-xs ${imageSource.includes('unsplash') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setImageSource(p => p.includes('unsplash') ? p.filter(s => s !== 'unsplash') : [...p, 'unsplash'])}
+                          >
+                            Unsplash
+                          </Button>
+                          <Button
+                            variant={imageSource.includes('pexels') ? 'default' : 'outline'}
+                            size="sm"
+                            className={`h-7 px-2.5 text-xs ${imageSource.includes('pexels') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setImageSource(p => p.includes('pexels') ? p.filter(s => s !== 'pexels') : [...p, 'pexels'])}
+                          >
+                            Pexels
+                          </Button>
+                          <Button
+                            variant={imageSource.includes('pixabay') ? 'default' : 'outline'}
+                            size="sm"
+                            className={`h-7 px-2.5 text-xs ${imageSource.includes('pixabay') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setImageSource(p => p.includes('pixabay') ? p.filter(s => s !== 'pixabay') : [...p, 'pixabay'])}
+                          >
+                            Pixabay
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant={imageSource.includes('pexels') ? 'default' : 'outline'}
+                            size="sm"
+                            className={`h-7 px-2.5 text-xs ${imageSource.includes('pexels') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setImageSource(p => p.includes('pexels') ? p.filter(s => s !== 'pexels') : [...p, 'pexels'])}
+                          >
+                            Pexels
+                          </Button>
+                          <Button
+                            variant={imageSource.includes('pixabay') ? 'default' : 'outline'}
+                            size="sm"
+                            className={`h-7 px-2.5 text-xs ${imageSource.includes('pixabay') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setImageSource(p => p.includes('pixabay') ? p.filter(s => s !== 'pixabay') : [...p, 'pixabay'])}
+                          >
+                            Pixabay
+                          </Button>
+                          <Button
+                            variant={imageSource.includes('mixkit') ? 'default' : 'outline'}
+                            size="sm"
+                            className={`h-7 px-2.5 text-xs ${imageSource.includes('mixkit') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setImageSource(p => p.includes('mixkit') ? p.filter(s => s !== 'mixkit') : [...p, 'mixkit'])}
+                          >
+                            Mixkit
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {/* Per Item */}
@@ -3684,14 +3716,29 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       Add
                     </Button>
 
+                    {/* Share Button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        handleCreateReviewSession();
+                        setShowShareForReviewDialog(true);
+                      }}
+                      className="h-8 text-xs"
+                      disabled={items.length === 0}
+                    >
+                      <Share2 className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                      Share
+                    </Button>
+
                     {/* Search items button */}
                     <Button
                        onClick={handleExtractImages}
                        className="bg-slate-800 hover:bg-slate-900 text-white h-8 text-xs"
-                       disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
+                       disabled={items.filter(i => i.word.trim() && !i.imageUrl && (i.mediaType || 'image') === mediaType).length === 0}
                     >
                        {(() => {
-                         const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
+                         const count = items.filter(i => i.word.trim() && !i.imageUrl && (i.mediaType || 'image') === mediaType).length;
                          return count > 0 ? `Search ${count} items` : 'Search items';
                        })()}
                     </Button>
@@ -3759,27 +3806,27 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                     )}
                   </>
                 ) : (
-                  /* Normal Mode Mobile Toolbar */
+                  /* Normal Mode Mobile Toolbar - Icon Only */
                   <>
                     {/* Sort Button */}
                     <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 text-xs min-w-[80px]"
+                        className="h-8 w-8 p-0"
                         onClick={() => setSortBy(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                        title={sortBy === 'newest' ? 'Newest first' : 'Oldest first'}
                     >
-                        <ArrowUpDown className="h-3.5 w-3.5 mr-1 text-slate-500" />
-                        {sortBy === 'newest' ? 'Newest' : 'Oldest'}
+                        <ArrowUpDown className="h-4 w-4 text-slate-500" />
                     </Button>
 
                     {/* Selection Button */}
                     {isSelectionMode ? (
-                        <Button variant="ghost" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
-                            Cancel
+                        <Button variant="ghost" size="sm" onClick={handleToggleSelectionMode} className="h-8 w-8 p-0" title="Cancel selection">
+                            <X className="h-4 w-4 text-slate-500" />
                         </Button>
                     ) : (
-                        <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 text-xs">
-                            <CheckSquare className="mr-1 h-3.5 w-3.5 text-slate-500" /> Select
+                        <Button variant="outline" size="sm" onClick={handleToggleSelectionMode} className="h-8 w-8 p-0" title="Select items">
+                            <CheckSquare className="h-4 w-4 text-slate-500" />
                         </Button>
                     )}
 
@@ -3791,10 +3838,25 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         setTargetCountByType(prev => ({ ...prev, [mediaType]: prev[mediaType] + 1 }));
                         setFocusNewRow(true);
                       }}
-                      className="h-8 text-xs"
+                      className="h-8 w-8 p-0"
+                      title="Add item"
                     >
-                      <Plus className="h-3.5 w-3.5 mr-1 text-slate-500" />
-                      Add
+                      <Plus className="h-4 w-4 text-slate-500" />
+                    </Button>
+
+                    {/* Share Button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        handleCreateReviewSession();
+                        setShowShareForReviewDialog(true);
+                      }}
+                      className="h-8 w-8 p-0"
+                      disabled={items.length === 0}
+                      title="Share for review"
+                    >
+                      <Share2 className="h-4 w-4 text-slate-500" />
                     </Button>
                   </>
                 )}
@@ -3818,7 +3880,16 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
               <CardContent className="p-0 space-y-0">
                 {/* # Column */}
                 <div className="px-6 pt-5 pb-4 flex items-center justify-between">
-                  <span className="text-base font-medium text-slate-400">#{item.number}</span>
+                  <div className="flex items-center gap-3">
+                    {isSelectionMode && (
+                      <Checkbox
+                        checked={selectedIds.has(item.id)}
+                        onCheckedChange={(checked) => handleSelectRow(item.id, checked as boolean)}
+                        className="h-5 w-5"
+                      />
+                    )}
+                    <span className="text-base font-medium text-slate-400">#{item.number}</span>
+                  </div>
                   <div className="flex gap-1">
                     {item.imageSourceUrl && (
                       <a
@@ -3862,16 +3933,9 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         <img src={item.imageUrl} alt={item.word} className="w-full h-full object-cover" />
                       )}
 
-                      {/* Top Overlay - Status & Selection */}
+                      {/* Top Overlay - Status & Badge */}
                       <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-10">
                         <div className="flex items-center gap-2">
-                          {isSelectionMode && (
-                            <Checkbox
-                              checked={selectedIds.has(item.id)}
-                              onCheckedChange={(checked) => handleSelectRow(item.id, checked as boolean)}
-                              className="bg-white/90 backdrop-blur-sm"
-                            />
-                          )}
                           {item.imageSource?.[0] && (
                             isFreeStock(item.imageSource[0]) ? (
                               <Badge variant="secondary" className="bg-slate-800/90 text-white border-0 text-[9px] px-2 h-5 backdrop-blur-sm shadow-sm font-medium">
@@ -4113,59 +4177,57 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
           <>
             {/* Show Search button when no reviews exist */}
             {!(reviewCounts.approved > 0 || reviewCounts.rejected > 0) && (
-              <div className="md:hidden sticky bottom-0 z-10 p-4 bg-white border-t border-slate-200">
-                <Button
-                   onClick={handleExtractImages}
-                   className="bg-slate-800 hover:bg-slate-900 text-white w-full h-11"
-                   disabled={items.filter(i => i.word.trim() && !i.imageUrl).length === 0}
-                >
-                   {(() => {
-                     const count = items.filter(i => i.word.trim() && !i.imageUrl).length;
-                     return count > 0 ? `Search ${count} items` : 'Search items';
-                   })()}
-                </Button>
-                {isSelectionMode && selectedIds.size > 0 && (
-                  <div className="flex gap-2 mt-2">
-                    <Badge variant="secondary" className="flex-1 justify-center bg-slate-100 text-slate-700 border-slate-200 h-9 px-3">
-                      {selectedIds.size} selected
-                    </Badge>
+              <div className="md:hidden fixed bottom-0 left-0 right-0 z-10 p-4 bg-white border-t border-slate-200" style={{ paddingBottom: `max(1rem, env(safe-area-inset-bottom))` }}>
+                {isSelectionMode && selectedIds.size > 0 ? (
+                  /* Selection Mode: Show selected count with hint and Delete button */
+                  <div className="flex gap-2 items-center">
+                    <div className="flex-1 text-center">
+                      <span className="text-sm font-medium text-slate-700">{selectedIds.size} selected</span>
+                      <span className="text-xs text-slate-500 ml-1">- Edit any to apply to all</span>
+                    </div>
                     <Button variant="destructive" size="sm" onClick={handleDeleteSelected} className="h-9">
                       <Trash2 className="h-4 w-4 mr-1" />
-                      Delete ({selectedIds.size})
+                      Delete
                     </Button>
                   </div>
+                ) : (
+                  /* Normal Mode: Show Search button */
+                  <Button
+                     onClick={handleExtractImages}
+                     className="bg-slate-800 hover:bg-slate-900 text-white w-full h-11"
+                     disabled={items.filter(i => i.word.trim() && !i.imageUrl && (i.mediaType || 'image') === mediaType).length === 0}
+                  >
+                     {(() => {
+                       const count = items.filter(i => i.word.trim() && !i.imageUrl && (i.mediaType || 'image') === mediaType).length;
+                       return count > 0 ? `Search ${count} items` : 'Search items';
+                     })()}
+                  </Button>
                 )}
               </div>
             )}
 
             {/* Show Review Filter Bar when reviews exist */}
             {(reviewCounts.approved > 0 || reviewCounts.rejected > 0) && (
-              <div className="md:hidden sticky bottom-0 z-10 bg-white border-t border-slate-200">
-                {/* Filter Tabs */}
-                <div className="px-4 pt-3 pb-2 flex gap-2">
-                  <Button
-                    variant={reviewFilter === 'all' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setReviewFilter('all')}
-                    className="flex-1"
-                  >
-                    전체 ({reviewCounts.approved + reviewCounts.rejected})
-                  </Button>
+              <div className="md:hidden fixed bottom-0 left-0 right-0 z-10 bg-white border-t border-slate-200" style={{ paddingBottom: `env(safe-area-inset-bottom)` }}>
+                {/* Filter & Action Buttons - Horizontal */}
+                <div className="px-4 py-3 flex gap-2">
                   {reviewCounts.rejected > 0 && (
                     <Button
                       variant={reviewFilter === 'rejected' ? 'default' : 'outline'}
                       size="sm"
-                      onClick={() => setReviewFilter('rejected')}
-                      className={`flex-1 ${reviewFilter === 'rejected' ? '' : 'text-red-600 hover:text-red-700 hover:bg-red-50'}`}
+                      onClick={() => setReviewFilter(reviewFilter === 'rejected' ? 'all' : 'rejected')}
+                      className={`w-[140px] h-10 ${reviewFilter === 'rejected' ? '' : 'text-red-600 hover:text-red-700 hover:bg-red-50'}`}
                     >
-                      <X className="h-4 w-4 mr-1" />
-                      거부됨 ({reviewCounts.rejected})
+                      {reviewFilter === 'rejected' ? (
+                        <>전체보기 ({reviewCounts.approved + reviewCounts.rejected})</>
+                      ) : (
+                        <>
+                          <X className="h-4 w-4 mr-1" />
+                          거부됨 ({reviewCounts.rejected})
+                        </>
+                      )}
                     </Button>
                   )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="px-4 pb-3 flex gap-2">
                   {reviewFilter !== 'rejected' && (
                     <Button
                       variant="outline"
@@ -4641,22 +4703,21 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
             <div className="h-full px-4 flex items-center justify-between gap-4">
               {/* Left Side: Filter Tabs */}
               <div className="flex gap-2 items-center flex-wrap">
-                <Button
-                  variant={reviewFilter === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setReviewFilter('all')}
-                >
-                  전체 ({reviewCounts.approved + reviewCounts.rejected})
-                </Button>
                 {reviewCounts.rejected > 0 && (
                   <Button
                     variant={reviewFilter === 'rejected' ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setReviewFilter('rejected')}
-                    className={reviewFilter === 'rejected' ? '' : 'text-red-600 hover:text-red-700 hover:bg-red-50'}
+                    onClick={() => setReviewFilter(reviewFilter === 'rejected' ? 'all' : 'rejected')}
+                    className={`w-[140px] ${reviewFilter === 'rejected' ? '' : 'text-red-600 hover:text-red-700 hover:bg-red-50'}`}
                   >
-                    <X className="h-4 w-4 mr-1" />
-                    거부됨 ({reviewCounts.rejected})
+                    {reviewFilter === 'rejected' ? (
+                      <>전체보기 ({reviewCounts.approved + reviewCounts.rejected})</>
+                    ) : (
+                      <>
+                        <X className="h-4 w-4 mr-1" />
+                        거부됨 ({reviewCounts.rejected})
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
@@ -4693,7 +4754,7 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
         {/* Fixed Bottom Submit Button (Mobile Review Mode Only) */}
         {reviewMode?.isReviewMode && (
-          <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-lg z-20">
+          <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-lg z-20" style={{ paddingBottom: `max(1rem, env(safe-area-inset-bottom))` }}>
             <Button
               onClick={handleSubmitReview}
               disabled={isSubmittingReview}

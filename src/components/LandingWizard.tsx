@@ -692,39 +692,39 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
             onRef={el => sectionRefs.current[0] = el}
             onStepChange={setStep}
           >
-             <div className="w-full h-full flex flex-col justify-center items-center md:items-start pb-12 pt-0 px-6 md:pl-[calc(8rem-0.5cm)] md:pr-8 mt-[calc(-1.75rem+0.5cm)]">
+             <div className="w-full h-full flex flex-col justify-center items-center pb-12 pt-0 px-6 mt-[calc(-1.75rem+0.5cm)]">
                 {/* Title */}
-                <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 m-0 p-0 mb-8 text-center md:text-left">
+                <h1 className="text-2xl md:text-5xl font-bold tracking-tight text-slate-900 m-0 p-0 mb-6 md:mb-10 text-center">
                     <TypingAnimation text="Save time on" /><br />
                     <TypingAnimation text="searching stock assets." delay={700} />
                 </h1>
 
-                {/* Buttons (horizontal on desktop, vertical on mobile) */}
-                <div className="flex flex-col md:flex-row gap-4 items-center">
+                {/* Buttons (vertical and centered) */}
+                <div className="flex flex-col gap-1 items-center w-full max-w-[290px] md:max-w-none">
                     <motion.div
                         initial={{ width: 235 }}
-                        animate={{ width: isMobile ? 290 : 329 }}
+                        animate={{ width: isMobile ? 290 : 520 }}
                         transition={{ duration: 0.8, delay: 1.5, ease: [0.25, 0.1, 0.25, 1] }}
-                        className="overflow-hidden max-md:mx-auto"
+                        className="overflow-visible max-md:mx-auto p-1"
                     >
                         <Button
                             size="lg"
-                            className="h-14 px-8 text-lg font-bold rounded-full bg-slate-900 hover:bg-slate-800 hover:scale-105 border-0 outline-none focus:outline-none whitespace-nowrap w-full"
+                            className="h-14 md:h-16 px-8 md:px-10 text-lg md:text-xl font-bold rounded-full bg-slate-900 hover:bg-slate-800 hover:scale-105 border-0 outline-none focus:outline-none whitespace-nowrap w-full"
                             onClick={handleNext}
                         >
                             Start Searching
-                            <ArrowRight className="ml-2 h-5 w-5" />
+                            <ArrowRight className="ml-2 h-5 w-5 md:h-6 md:w-6" />
                         </Button>
                     </motion.div>
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 2.5, duration: 0.5 }}
-                        className="relative max-md:w-[290px] max-md:mx-auto md:w-auto"
+                        className="relative w-[290px] md:w-[520px] p-1"
                     >
                         <Button
                             size="lg"
-                            className="h-14 px-16 text-lg font-bold rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-all hover:scale-105 border-0 outline-none focus:outline-none whitespace-nowrap w-full md:min-w-[228px]"
+                            className="h-14 md:h-16 px-8 md:px-10 text-lg md:text-xl font-bold rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-all hover:scale-105 border-0 outline-none focus:outline-none whitespace-nowrap w-full"
                             onClick={() => onComplete({
                                 mediaType: 'image',
                                 sources: [],
@@ -733,8 +733,8 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                                 items: []
                             })}
                         >
-                            Batch Search
-                            <ArrowRight className="ml-2 h-5 w-5" />
+                            Project
+                            <ArrowRight className="ml-2 h-5 w-5 md:h-6 md:w-6" />
                         </Button>
 
                         {/* About License Button */}

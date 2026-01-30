@@ -8,8 +8,8 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 
-// AI usage tracking - 50 uses per day limit
-const AI_DAILY_LIMIT = 50;
+// AI usage tracking - 20 uses per day limit
+const AI_DAILY_LIMIT = 20;
 const AI_USAGE_KEY = 'ai_usage_data';
 
 interface AIUsageData {
@@ -509,7 +509,8 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
             disabled={isOptimizing}
           >
             <Wand2 className="h-4 w-4" />
-            <span className="text-sm font-medium">AI context</span>
+            <span className="text-sm font-medium hidden md:inline">AI context</span>
+            <span className="text-sm font-medium md:hidden">AI</span>
           </Button>
           {mode === 'manual' && onIsolatedBackgroundChange && (
             <Button
