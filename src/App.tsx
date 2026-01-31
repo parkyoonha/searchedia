@@ -44,6 +44,7 @@ import {
 } from './components/ui/dropdown-menu';
 import { toast, Toaster } from "sonner";
 import { PricingDialog, PaymentDialog, LoginDialog } from './components/subscription/SubscriptionModals';
+import { Footer } from './components/Footer';
 import { supabase } from './lib/supabase';
 import { loadProjectsFromDB, saveProjectToDB, deleteProjectFromDB, syncProjectsToDB, loadFoldersFromDB, syncFoldersToDB, deleteFolderFromDB } from './lib/database';
 import { getMyReviewSessions } from './lib/reviewDatabase';
@@ -837,6 +838,7 @@ export default function App() {
                    </div>
                  </div>
                  <LandingWizard onComplete={(data) => handleBulkGenerate(data.items, data)} />
+                <Footer className="absolute bottom-0 left-0 right-0" />
                </div>
              ) : (
                <BulkGenerator

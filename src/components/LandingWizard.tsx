@@ -24,16 +24,6 @@ import {
   DropdownMenuTrigger
 } from './ui/dropdown-menu';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from './ui/alert-dialog';
-import {
   Image as ImageIcon,
   Box,
   Palette,
@@ -53,8 +43,7 @@ import {
   Check,
   Plus,
   X,
-  ChevronDown,
-  Info
+  ChevronDown
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import { getRandomShutterstockImage } from '../services/shutterstock';
@@ -694,7 +683,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
           >
              <div className="w-full h-full flex flex-col justify-center items-center pb-12 pt-0 px-6 mt-[calc(-1.75rem+0.5cm)]">
                 {/* Title */}
-                <h1 className="text-2xl md:text-5xl font-bold tracking-tight text-slate-900 m-0 p-0 mb-6 md:mb-10 text-center">
+                <h1 className="text-2xl md:text-[2.75rem] md:leading-[1.15] font-bold tracking-tight text-slate-900 m-0 p-0 mb-6 md:mb-10 text-center">
                     <TypingAnimation text="Save time on" /><br />
                     <TypingAnimation text="searching stock assets." delay={700} />
                 </h1>
@@ -737,45 +726,6 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                             <ArrowRight className="ml-2 h-5 w-5 md:h-6 md:w-6" />
                         </Button>
 
-                        {/* About License Button */}
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <button className="absolute -bottom-6 right-0 text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 transition-colors">
-                              <Info className="h-3 w-3" />
-                              about license
-                            </button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle className="flex items-center gap-2">
-                                <Info className="h-5 w-5 text-blue-600" />
-                                Image License Notice
-                              </AlertDialogTitle>
-                              <AlertDialogDescription className="space-y-4 pt-2">
-                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-                                  <p className="font-semibold text-amber-900 text-sm">⚠️ Important Notice</p>
-                                  <p className="text-sm text-slate-700">Images displayed are <span className="text-red-600 font-semibold">preview thumbnails only</span> and are not licensed for commercial use.</p>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <p className="font-semibold text-slate-900 text-sm">To use these images:</p>
-                                  <ul className="space-y-1 text-sm text-slate-700">
-                                    <li>• Visit the <span className="text-red-600 font-semibold">original stock website</span></li>
-                                    <li>• Purchase or download the full-resolution image</li>
-                                    <li>• Review and comply with the licensing terms</li>
-                                  </ul>
-                                </div>
-
-                                <div className="bg-slate-50 rounded-lg p-3">
-                                  <p className="text-xs text-slate-600">This tool helps you find and organize stock images. You are responsible for obtaining proper licenses before using any images.</p>
-                                </div>
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogAction className="bg-blue-600 hover:bg-blue-700">I Understand</AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
                     </motion.div>
                 </div>
 
@@ -1075,16 +1025,16 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
           >
              <div className="space-y-6 max-w-md mx-auto w-full">
                 <div className="space-y-2 text-center">
-                   <h2 className="text-3xl font-bold text-slate-900">Item Count</h2>
-                   <p className="text-lg text-slate-500">How many candidate images to fetch?</p>
+                   <h2 className="text-4xl font-bold text-slate-900">Item Count</h2>
+                   <p className="text-xl text-slate-500">How many candidate images to fetch?</p>
                 </div>
-                
+
                 <div className="grid grid-cols-4 gap-4">
                    {COUNTS.map(count => (
                      <Button
                        key={count}
                        variant={selections.count === count ? 'default' : 'outline'}
-                       className={`h-16 text-xl font-semibold hover:!border-blue-400 hover:!text-blue-600 active:!bg-blue-600 active:!border-blue-600 active:!text-white focus:!bg-blue-600 focus:!border-blue-600 focus:!text-white focus-visible:!ring-blue-500 focus-visible:!ring-2 ${selections.count === count ? 'bg-blue-600 hover:bg-blue-700 border-blue-600' : ''}`}
+                       className={`h-18 text-2xl font-semibold hover:!border-blue-400 hover:!text-blue-600 active:!bg-blue-600 active:!border-blue-600 active:!text-white focus:!bg-blue-600 focus:!border-blue-600 focus:!text-white focus-visible:!ring-blue-500 focus-visible:!ring-2 ${selections.count === count ? 'bg-blue-600 hover:bg-blue-700 border-blue-600' : ''}`}
                        onClick={() => {
                          updateSelection('count', count);
                          if (step === 3) handleNext();

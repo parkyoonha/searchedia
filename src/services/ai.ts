@@ -393,16 +393,9 @@ export async function optimizeKeywordsWithAI(
       }
     }
 
-    // Fallback to OpenAI
+    // OpenAI fallback disabled - only use free APIs (Groq, Gemini)
     if (!phrase) {
-      phrase = await callOpenAI(prompt);
-      if (phrase) {
-        provider = 'OpenAI';
-      }
-    }
-
-    if (!phrase) {
-      console.error('[AI] ❌ All providers failed');
+      console.error('[AI] ❌ Free API limits reached (Groq: 14,400/day, Gemini: 1,500/day). AI disabled.');
       return null;
     }
 
@@ -483,5 +476,15 @@ export function clearCache() {
  * Check if any AI provider is configured
  */
 export function isAIConfigured(): boolean {
-  return !!(GROQ_API_KEY || GEMINI_API_KEY || OPENAI_API_KEY);
+  return !!(GROQ_API_KEY || GEMINI_API_KEY);
+}
+
+/**
+ * Check if free AI APIs are still available (not reached daily limit)
+ */
+export function isFreeAIAvailable(): boolean {
+  resetDailyCounters();
+  const groqAvailable = GROQ_API_KEY && groqCallsToday < GROQ_DAILY_LIMIT;
+  const geminiAvailable = GEMINI_API_KEY && geminiCallsToday < GEMINI_DAILY_LIMIT;
+  return !!(groqAvailable || geminiAvailable);
 }
