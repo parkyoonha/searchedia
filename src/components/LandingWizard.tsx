@@ -642,7 +642,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
           </div>
           
           <div className="space-y-2">
-            <h2 className="text-2xl font-light tracking-tight">Generating Visuals</h2>
+            <h2 className="text-2xl font-light tracking-tight">Selecting Visuals</h2>
             <p className="text-slate-400 text-lg">Visualizing Tags and Keywords...</p>
           </div>
 
@@ -684,8 +684,8 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
              <div className="w-full h-full flex flex-col justify-center items-center pb-12 pt-0 px-6 mt-[calc(-1.75rem+0.5cm)]">
                 {/* Title */}
                 <h1 className="text-2xl md:text-[2.75rem] md:leading-[1.15] font-bold tracking-tight text-slate-900 m-0 p-0 mb-6 md:mb-10 text-center">
-                    <TypingAnimation text="Save time on" /><br />
-                    <TypingAnimation text="searching stock assets." delay={700} />
+                    <TypingAnimation text="Quick search &" /><br />
+                    <TypingAnimation text="Organize stock assets." delay={700} />
                 </h1>
 
                 {/* Buttons (vertical and centered) */}
