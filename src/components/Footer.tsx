@@ -44,19 +44,19 @@ export function Footer({ className = '' }: FooterProps) {
                   Image License Notice
                 </AlertDialogTitle>
                 <AlertDialogDescription className="space-y-4 pt-2">
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
-                    <p className="font-semibold text-amber-900 text-sm">Copyright Notice</p>
+                  <div className="bg-slate-100 rounded-lg p-4 space-y-3">
+                    <p className="font-semibold text-slate-800 text-sm">Copyright Notice</p>
                     <ul className="space-y-2 text-sm text-slate-700">
                       <li className="flex gap-2">
-                        <span className="text-amber-600">•</span>
+                        <span className="text-slate-500">•</span>
                         <span>All images are copyrighted by their respective stock platforms (Unsplash, Pexels, Pixabay, etc.)</span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="text-amber-600">•</span>
-                        <span>This service is a search and organization tool only; <strong className="text-red-600">no resale rights are granted</strong></span>
+                        <span className="text-slate-500">•</span>
+                        <span>This service is a search and organization tool only; <span className="font-medium text-red-600">no resale rights are granted</span></span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="text-amber-600">•</span>
+                        <span className="text-slate-500">•</span>
                         <span>Users are responsible for verifying licenses before final use</span>
                       </li>
                     </ul>
