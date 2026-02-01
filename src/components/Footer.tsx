@@ -19,7 +19,7 @@ interface FooterProps {
 export function Footer({ className = '' }: FooterProps) {
   return (
     <footer className={`bg-white border-t border-slate-200 ${className}`}>
-      <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div className="max-w-7xl mx-auto px-6 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] flex flex-col sm:flex-row items-center justify-between gap-2">
         <p className="text-sm text-slate-500">
           &copy; {new Date().getFullYear()} Searchedia. All rights reserved.
         </p>

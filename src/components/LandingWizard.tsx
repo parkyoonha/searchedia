@@ -725,8 +725,8 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                             Project
                             <ArrowRight className="ml-2 h-5 w-5 md:h-6 md:w-6" />
                         </Button>
-
                     </motion.div>
+
                 </div>
 
                 {/* Brief Generate Section */}
