@@ -1,0 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;600;700&display=swap');
+
+.font-gothic {
+  font-family: 'Gothic A1', sans-serif !important;
+}
+
+.font-geist-gothic {
+  font-family: 'Geist', 'Gothic A1', sans-serif;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/Geist-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/Geist-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/Geist-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/Geist-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/Geist-ExtraBold.ttf') format('truetype');
+  font-weight: 800;
+  font-style: normal;
+}
+
+.font-geist {
+  font-family: 'Geist', sans-serif;
+}
+
+.font-gothica1-medium {
+  font-family: 'Gothic A1', sans-serif;
+  font-weight: 500;
+}
