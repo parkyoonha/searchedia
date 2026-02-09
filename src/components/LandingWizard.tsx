@@ -750,7 +750,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
   const currentStyles = STYLES[selections.mediaType] || STYLES.image;
 
   return (
-    <div className={`bg-slate-50 ${step === 0 ? 'h-screen overflow-x-auto overflow-y-hidden' : 'min-h-screen pb-32'}`}>
+    <div className={`bg-slate-50 ${step === 0 ? 'h-dvh overflow-x-auto overflow-y-hidden' : 'min-h-dvh pb-32'}`}>
        <div className={`w-full ${step === 0 ? '' : 'max-w-5xl mx-auto px-6 pt-8 space-y-8'}`}>
           {step > 0 && (
              <div className="flex justify-center">
@@ -768,7 +768,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
             onRef={el => sectionRefs.current[0] = el}
             onStepChange={setStep}
           >
-             <div className="w-full h-screen flex flex-col items-center justify-center px-2 sm:px-4 md:px-6 overflow-hidden min-w-[300px]">
+             <div className="w-full h-dvh flex flex-col items-center justify-center px-2 sm:px-4 md:px-6 overflow-hidden min-w-[300px]">
                 {/* Title with Readme button */}
                 <div className="flex flex-col items-center mb-4 w-full max-w-lg">
                     {/* Readme Button - above title, right aligned */}
@@ -776,7 +776,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 2, duration: 0.5 }}
-                        className="w-full flex justify-end md:justify-end mb-2 px-2 md:px-0"
+                        className="w-full flex justify-end md:justify-end mb-2 pl-2 pr-5 md:px-0"
                     >
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -895,13 +895,13 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                             ref={carouselRef}
                             className="flex flex-row gap-4 transition-transform duration-300 ease-out"
                             style={{
-                                transform: `translateX(calc(50% - ${currentVideoIndex * (isMobile ? 80 : 82)}% - ${currentVideoIndex * 16}px - ${isMobile ? 43 : 40}%))`
+                                transform: `translateX(calc(50% - ${currentVideoIndex * (isMobile ? 80 : 60)}% - ${currentVideoIndex * 16}px - ${isMobile ? 45 : 30}%))`
                             }}
                         >
                             {videoSources.map((src, index) => (
                                 <div
                                     key={index}
-                                    className={`flex-shrink-0 w-[85%] sm:w-[80%] aspect-[16/9] bg-slate-200 rounded-lg overflow-hidden shadow-md sm:shadow-lg transition-all duration-300 ${
+                                    className={`flex-shrink-0 w-[85%] sm:w-[60%] aspect-[16/9] bg-slate-200 rounded-lg overflow-hidden shadow-md sm:shadow-lg transition-all duration-300 ${
                                         index === currentVideoIndex ? 'scale-110 z-10' : 'scale-95 opacity-50'
                                     }`}
                                 >
