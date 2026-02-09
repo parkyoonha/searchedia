@@ -118,7 +118,7 @@ export default function App() {
 
   // Subscription State
   const [user, setUser] = useState<{id: string, name: string, email: string, plan: 'free' | 'pro', avatar_url?: string} | null>(null);
-  const [credits, setCredits] = useState(50); // Free credits
+  const [credits, setCredits] = useState(99999); // Free credits (temporarily unlimited)
   const [showPricing, setShowPricing] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [showLogin, setShowLogin] = useState(false);

@@ -159,7 +159,11 @@ const StepContainer = ({
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className={`w-full max-w-3xl mx-auto py-24 min-h-screen flex flex-col justify-center transition-all duration-300 relative ${
+      className={`w-full mx-auto transition-all duration-300 relative ${
+        index === 0
+          ? 'h-full'
+          : 'max-w-3xl py-24 min-h-screen flex flex-col justify-center'
+      } ${
         isActive
           ? 'opacity-100'
           : 'opacity-40 grayscale'
@@ -225,6 +229,78 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
 
   // Refs for scrolling
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Carousel state
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  const videoSources = [
+    '/KakaoTalk_20260206_190548848.mp4',
+    '/KakaoTalk_20260206_190348117.mp4'
+  ];
+
+  // Handle carousel navigation
+  const handleCarouselNav = (direction: 'prev' | 'next') => {
+    const newIndex = direction === 'next'
+      ? (currentVideoIndex + 1) % videoSources.length
+      : (currentVideoIndex - 1 + videoSources.length) % videoSources.length;
+    setCurrentVideoIndex(newIndex);
+  };
+
+  // Swipe/Drag handling
+  const dragStartX = useRef<number>(0);
+  const isDragging = useRef<boolean>(false);
+
+  // Touch events (mobile)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    dragStartX.current = e.touches[0].clientX;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = dragStartX.current - touchEndX;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0) {
+        handleCarouselNav('next');
+      } else {
+        handleCarouselNav('prev');
+      }
+    }
+  };
+
+  // Mouse events (desktop)
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+  };
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    const diff = dragStartX.current - e.clientX;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0) {
+        handleCarouselNav('next');
+      } else {
+        handleCarouselNav('prev');
+      }
+    }
+  };
+  const handleMouseLeave = () => {
+    isDragging.current = false;
+  };
+
+  // Control video playback based on current index
+  useEffect(() => {
+    videoRefs.current.forEach((video, index) => {
+      if (video) {
+        if (index === currentVideoIndex) {
+          video.play();
+        } else {
+          video.pause();
+        }
+      }
+    });
+  }, [currentVideoIndex]);
+
 
   // Prevent auto-scroll on page load
   useEffect(() => {
@@ -674,7 +750,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
   const currentStyles = STYLES[selections.mediaType] || STYLES.image;
 
   return (
-    <div className={`min-h-screen bg-slate-50 ${step === 0 ? 'flex flex-col justify-center' : 'pb-32'}`}>
+    <div className={`bg-slate-50 ${step === 0 ? 'h-screen overflow-x-auto overflow-y-hidden' : 'min-h-screen pb-32'}`}>
        <div className={`w-full ${step === 0 ? '' : 'max-w-5xl mx-auto px-6 pt-8 space-y-8'}`}>
           {step > 0 && (
              <div className="flex justify-center">
@@ -692,62 +768,19 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
             onRef={el => sectionRefs.current[0] = el}
             onStepChange={setStep}
           >
-             <div className="w-full h-full flex flex-col justify-center items-center pb-12 pt-0 px-6 mt-[calc(-1.75rem+0.5cm)]">
-                {/* Title */}
-                <h1 className="text-2xl md:text-[2.75rem] md:leading-[1.15] font-bold tracking-tight text-slate-900 m-0 p-0 mb-6 md:mb-10 text-center">
-                    <TypingAnimation text="Quick search &" /><br />
-                    <TypingAnimation text="Organize stock assets." delay={700} />
-                </h1>
-
-                {/* Buttons (vertical and centered) */}
-                <div className="flex flex-col gap-1 items-center w-full max-w-[290px] md:max-w-none">
-                    <motion.div
-                        initial={{ width: 235 }}
-                        animate={{ width: isMobile ? 290 : 520 }}
-                        transition={{ duration: 0.8, delay: 1.5, ease: [0.25, 0.1, 0.25, 1] }}
-                        className="overflow-visible max-md:mx-auto p-1"
-                    >
-                        <Button
-                            size="lg"
-                            className="h-14 md:h-16 px-8 md:px-10 text-lg md:text-xl font-bold rounded-full bg-slate-900 hover:bg-slate-800 hover:scale-105 border-0 outline-none focus:outline-none whitespace-nowrap w-full"
-                            onClick={handleNext}
-                        >
-                            Start Searching
-                            <ArrowRight className="ml-2 h-5 w-5 md:h-6 md:w-6" />
-                        </Button>
-                    </motion.div>
+             <div className="w-full h-screen flex flex-col items-center justify-center px-2 sm:px-4 md:px-6 overflow-hidden min-w-[300px]">
+                {/* Title with Readme button */}
+                <div className="flex flex-col items-center mb-4 w-full max-w-lg">
+                    {/* Readme Button - above title, right aligned */}
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        transition={{ delay: 2.5, duration: 0.5 }}
-                        className="relative w-[290px] md:w-[520px] p-1"
-                    >
-                        <Button
-                            size="lg"
-                            className="h-14 md:h-16 px-8 md:px-10 text-lg md:text-xl font-bold rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-all hover:scale-105 border-0 outline-none focus:outline-none whitespace-nowrap w-full"
-                            onClick={() => onComplete({
-                                mediaType: 'image',
-                                sources: [],
-                                style: '',
-                                count: '',
-                                items: []
-                            })}
-                        >
-                            Project
-                            <ArrowRight className="ml-2 h-5 w-5 md:h-6 md:w-6" />
-                        </Button>
-                    </motion.div>
-
-                    {/* Readme Button */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 3, duration: 0.5 }}
-                        className="mt-4"
+                        transition={{ delay: 2, duration: 0.5 }}
+                        className="w-full flex justify-end md:justify-end mb-2 px-2 md:px-0"
                     >
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
-                                <button className="text-sm text-slate-500 hover:text-slate-700 transition-colors flex items-center gap-1">
+                                <button className="text-xs text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1">
                                     <Info className="h-3 w-3" />
                                     Readme
                                 </button>
@@ -755,7 +788,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                             <AlertDialogContent>
                                 <AlertDialogHeader>
                                     <AlertDialogTitle className="flex items-center gap-2">
-                                        <Info className="h-5 w-5 text-blue-600" />
+                                        <Info className="h-5 w-5 text-black" />
                                         Image License Notice
                                     </AlertDialogTitle>
                                     <AlertDialogDescription className="space-y-4 pt-2">
@@ -768,7 +801,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                                                 </li>
                                                 <li className="flex gap-2">
                                                     <span className="text-slate-500">•</span>
-                                                    <span>This service is a search and organization tool only; <span className="font-medium text-red-600">no resale rights are granted</span></span>
+                                                    <span>This service is a search and organization tool only; <span className="font-medium text-black">no resale rights are granted</span></span>
                                                 </li>
                                                 <li className="flex gap-2">
                                                     <span className="text-slate-500">•</span>
@@ -776,16 +809,14 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                                                 </li>
                                             </ul>
                                         </div>
-
                                         <div className="space-y-2">
                                             <p className="font-semibold text-slate-900 text-sm">To use these images:</p>
                                             <ul className="space-y-1 text-sm text-slate-700">
-                                                <li>• Visit the <span className="text-blue-600 font-medium">original stock website</span></li>
+                                                <li>• Visit the <span className="text-black font-medium">original stock website</span></li>
                                                 <li>• Download or purchase the full-resolution image</li>
                                                 <li>• Review and comply with the licensing terms</li>
                                             </ul>
                                         </div>
-
                                         <div className="bg-slate-50 rounded-lg p-3">
                                             <p className="text-xs text-slate-600">
                                                 Searchedia helps you discover and organize stock images.
@@ -795,12 +826,114 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                                     </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
-                                    <AlertDialogAction className="bg-blue-600 hover:bg-blue-700">I Understand</AlertDialogAction>
+                                    <AlertDialogAction className="bg-black hover:bg-black">I Understand</AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
                         </AlertDialog>
                     </motion.div>
+                    <h1 className="text-2xl md:text-[1.7rem] md:leading-[1.15] font-bold tracking-tight text-slate-900 m-0 p-0 mb-2 md:mb-3 text-center md:text-center">
+                        <TypingAnimation text="Organize stock assets." />
+                    </h1>
+                    {/* Subtitle and buttons wrapper - sized to content */}
+                    <div className="flex flex-col items-center md:items-start w-full sm:inline-flex sm:w-auto md:w-full px-2 md:px-0">
+                        <motion.p
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 1.2, duration: 0.5 }}
+                            className="text-sm md:text-base text-slate-500 mb-4 text-center md:text-left w-full sm:w-auto md:whitespace-nowrap"
+                        >
+                            Searchedia helps you discover and organize stock images & videos.
+                        </motion.p>
+                        {/* Text links (horizontal layout) */}
+                        <div className="flex justify-between items-center w-full px-2 md:px-0 mt-5 sm:mt-0">
+                            <motion.button
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 1.5, duration: 0.5 }}
+                                className="text-sm md:text-base font-medium text-slate-700 hover:text-slate-900 transition-colors flex items-center gap-1"
+                                onClick={handleNext}
+                            >
+                                Start Searching
+                                <ArrowRight className="h-4 w-4" />
+                            </motion.button>
+                            <motion.button
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 2, duration: 0.5 }}
+                                className="text-sm md:text-base font-medium text-slate-700 hover:text-slate-900 transition-colors flex items-center gap-1"
+                                onClick={() => onComplete({
+                                    mediaType: 'image',
+                                    sources: [],
+                                    style: '',
+                                    count: '',
+                                    items: []
+                                })}
+                            >
+                                Project
+                                <ArrowRight className="h-4 w-4" />
+                            </motion.button>
+                        </div>
+                    </div>
                 </div>
+
+                {/* Video Carousel */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 2.5, duration: 0.6 }}
+                    className="w-full max-w-xl md:max-w-[40rem] mt-10 md:mt-8 px-0 sm:px-4 md:px-8 relative"
+                >
+                    <div
+                        className="w-full relative z-10 overflow-hidden py-10 md:py-10 cursor-grab active:cursor-grabbing select-none"
+                        onTouchStart={handleTouchStart}
+                        onTouchEnd={handleTouchEnd}
+                        onMouseDown={handleMouseDown}
+                        onMouseUp={handleMouseUp}
+                        onMouseLeave={handleMouseLeave}
+                    >
+                        <div
+                            ref={carouselRef}
+                            className="flex flex-row gap-4 transition-transform duration-300 ease-out"
+                            style={{
+                                transform: `translateX(calc(50% - ${currentVideoIndex * (isMobile ? 80 : 82)}% - ${currentVideoIndex * 16}px - ${isMobile ? 43 : 40}%))`
+                            }}
+                        >
+                            {videoSources.map((src, index) => (
+                                <div
+                                    key={index}
+                                    className={`flex-shrink-0 w-[85%] sm:w-[80%] aspect-[16/9] bg-slate-200 rounded-lg overflow-hidden shadow-md sm:shadow-lg transition-all duration-300 ${
+                                        index === currentVideoIndex ? 'scale-110 z-10' : 'scale-95 opacity-50'
+                                    }`}
+                                >
+                                    <video
+                                        ref={el => videoRefs.current[index] = el}
+                                        className={`w-full h-full object-cover ${index === 0 ? 'object-top' : ''}`}
+                                        style={index === 1 ? { objectPosition: 'right bottom' } : undefined}
+                                        autoPlay={index === 0}
+                                        muted
+                                        loop
+                                        playsInline
+                                    >
+                                        <source src={src} type="video/mp4" />
+                                    </video>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Indicator Dots */}
+                    <div className="flex justify-center gap-2 mt-2">
+                        {videoSources.map((_, index) => (
+                            <button
+                                key={index}
+                                onClick={() => setCurrentVideoIndex(index)}
+                                className={`w-2 h-2 rounded-full transition-colors ${
+                                    index === currentVideoIndex ? 'bg-slate-600' : 'bg-slate-300'
+                                }`}
+                            />
+                        ))}
+                    </div>
+                </motion.div>
 
                 {/* Brief Generate Section */}
                 <motion.div
