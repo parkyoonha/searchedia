@@ -8,8 +8,8 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 
-// AI usage tracking - 20 uses per day limit
-const AI_DAILY_LIMIT = 20;
+// AI usage tracking - temporarily unlimited
+const AI_DAILY_LIMIT = 99999;
 const AI_USAGE_KEY = 'ai_usage_data';
 
 interface AIUsageData {
@@ -143,6 +143,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
   const keywordContainerRef = useRef<HTMLDivElement>(null);
   const [savedKeywordsBeforeIsolatedBg, setSavedKeywordsBeforeIsolatedBg] = useState<string>(''); // Store keywords before isolated bg
+  const [previousResults, setPreviousResults] = useState<string[]>([]); // Track all previous results
 
   const extractedKeywords = extractKeywords(text, word);
 
@@ -356,24 +357,30 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
       return;
     }
 
-    // Pass current result to exclude it from next generation
-    const result = await optimizeKeywordsWithAI(text, word, aiOptimized);
+    // Add current result to previous results for exclusion
+    const allPreviousResults = aiOptimized
+      ? [...previousResults, aiOptimized].slice(-10) // Keep last 10 results
+      : previousResults;
+
+    // Pass ALL previous results to exclude them
+    const excludeString = allPreviousResults.join(' | ');
+    const result = await optimizeKeywordsWithAI(text, word, excludeString);
+
     if (result) {
+      setPreviousResults(allPreviousResults); // Save for next regeneration
       setAiOptimized(result.searchQuery);
       setEditedQuery(result.searchQuery);
       // Use same format as auto-optimization to prevent re-triggering
       setLastProcessedText(`${text}-${word}`);
       onKeywordsGenerated?.(result.searchQuery);
       logger.log('[KeywordPreview] Regenerated new variation:', {
-        previous: aiOptimized,
+        previousCount: allPreviousResults.length,
         new: result.searchQuery
       });
       if (remaining - 1 <= 10) {
         toast.info(`AI context: ${remaining - 1} uses remaining today`);
       }
-
-      // Trigger image regeneration as well
-      onRegenerateImage?.();
+      // Image regeneration is handled by BulkGenerator when keywords change
     }
     setIsOptimizing(false);
   };
