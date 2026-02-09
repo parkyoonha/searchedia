@@ -104,10 +104,13 @@ import { ConfirmDeleteProjectDialog } from './project/ConfirmDeleteProjectDialog
 import { ConfirmCompleteDialog } from './review/ConfirmCompleteDialog';
 import { submitReviewResults, createReviewSession, getMyReviewSessions } from '../lib/reviewDatabase';
 import { logger } from '../lib/logger';
+import { extractCoreKeywords } from '../services/searchUtils';
 
 // Generate stock site search URL based on source and keywords
 function generateStockSiteSearchUrl(source: string, keywords: string, mediaType: 'image' | 'video' = 'image'): string {
-  const encodedKeywords = encodeURIComponent(keywords.trim());
+  // Extract core keywords (3-4 words) for better search results
+  const coreKeywords = extractCoreKeywords(keywords, 4) || keywords.trim();
+  const encodedKeywords = encodeURIComponent(coreKeywords);
 
   switch (source.toLowerCase()) {
     case 'unsplash':
@@ -2048,6 +2051,27 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
           return null;
         }
       });
+
+      // Fast mode: return as soon as the first valid result arrives (for single image)
+      if (count <= 1 && searchPromises.length > 1) {
+        logger.log('[BulkGenerator] ⚡ Fast mode: racing sources for first result');
+        const result = await new Promise<any>((resolve) => {
+          let resolved = false;
+          let completed = 0;
+          searchPromises.forEach(p => p.then(r => {
+            completed++;
+            if (r && !resolved) {
+              resolved = true;
+              resolve(r);
+            } else if (completed === searchPromises.length && !resolved) {
+              resolve(null);
+            }
+          }));
+        });
+        const validResults = result ? [result] : [];
+        logger.log(`[BulkGenerator] ⚡ Fast mode: got result from ${result?.source || 'none'}`);
+        return { results: validResults, updatedPage: currentPage };
+      }
 
       const results = await Promise.all(searchPromises);
       const validResults = results.filter(r => r !== null);

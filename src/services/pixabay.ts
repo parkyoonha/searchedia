@@ -130,19 +130,13 @@ export async function getRandomPixabayImage(
     }
 
     // Filter out already used images
-    const unusedImages = images.filter(img => !excludeUrls.includes(img.largeImageURL));
+    const unusedImages = images.filter(img => !excludeUrls.includes(img.webformatURL));
 
-    if (unusedImages.length === 0) {
-      logger.warn('[Pixabay] All images on page', page, 'have been used');
-      return null;
-    }
-
-    // Get a random image from the unused results
-    const randomIndex = Math.floor(Math.random() * unusedImages.length);
-    const selectedImage = unusedImages[randomIndex];
+    // If all images have been used, restart from the beginning
+    const selectedImage = unusedImages.length > 0 ? unusedImages[0] : images[0];
 
     const result: PixabayPhotoResult = {
-      imageUrl: selectedImage.largeImageURL,
+      imageUrl: selectedImage.webformatURL,
       sourceUrl: selectedImage.pageURL,
       photographer: selectedImage.user,
       photographerUrl: '' // Pixabay API doesn't provide direct photographer URL
@@ -220,14 +214,8 @@ export async function getRandomPixabayVideo(
     // Filter out already used videos
     const unusedVideos = videos.filter(video => !excludeUrls.includes(video.videos.large.url));
 
-    if (unusedVideos.length === 0) {
-      logger.warn('[Pixabay] All videos on page', page, 'have been used');
-      return null;
-    }
-
-    // Get a random video from the unused results
-    const randomIndex = Math.floor(Math.random() * unusedVideos.length);
-    const selectedVideo = unusedVideos[randomIndex];
+    // If all videos have been used, restart from the beginning
+    const selectedVideo = unusedVideos.length > 0 ? unusedVideos[0] : videos[0];
 
     const result: PixabayVideoResult = {
       videoUrl: selectedVideo.videos.large.url,

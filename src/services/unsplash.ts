@@ -41,7 +41,8 @@ export async function searchUnsplashPhotos(
 ): Promise<UnsplashImage[]> {
   try {
     const enhancedQuery = enhanceSearchQuery(query);
-    logger.log('[Unsplash] Searching for:', enhancedQuery);
+    console.log('[Unsplash] Original:', query);
+    console.log('[Unsplash] Searching with:', enhancedQuery);
     logger.log('[Unsplash] Access Key:', ACCESS_KEY ? 'Set' : 'Missing');
 
     if (!ACCESS_KEY) {
@@ -104,17 +105,11 @@ export async function getRandomUnsplashPhoto(
     // Filter out already used images
     const unusedImages = images.filter(img => !excludeUrls.includes(img.urls.regular));
 
-    if (unusedImages.length === 0) {
-      logger.warn('[Unsplash] All images on page', page, 'have been used');
-      return null;
-    }
-
-    // Get a random image from the unused results
-    const randomIndex = Math.floor(Math.random() * unusedImages.length);
-    const selectedImage = unusedImages[randomIndex];
+    // If all images have been used, restart from the beginning
+    const selectedImage = unusedImages.length > 0 ? unusedImages[0] : images[0];
 
     const result: UnsplashPhotoResult = {
-      imageUrl: selectedImage.urls.regular,
+      imageUrl: selectedImage.urls.small,
       sourceUrl: `https://unsplash.com/photos/${selectedImage.id}`,
       photographer: selectedImage.user.name,
       photographerUrl: `https://unsplash.com/@${selectedImage.user.username}`

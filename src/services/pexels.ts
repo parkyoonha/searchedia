@@ -128,7 +128,7 @@ export async function getRandomPexelsPhoto(
     }
 
     // Filter out already used photos
-    const unusedPhotos = photos.filter(photo => !excludeUrls.includes(photo.src.large));
+    const unusedPhotos = photos.filter(photo => !excludeUrls.includes(photo.src.medium));
 
     if (unusedPhotos.length === 0) {
       logger.warn('[Pexels] All photos on page', page, 'have been used');
@@ -140,7 +140,7 @@ export async function getRandomPexelsPhoto(
     const selectedPhoto = unusedPhotos[randomIndex];
 
     const result: PexelsPhotoResult = {
-      imageUrl: selectedPhoto.src.large,
+      imageUrl: selectedPhoto.src.medium,
       sourceUrl: selectedPhoto.url,
       photographer: selectedPhoto.photographer,
       photographerUrl: selectedPhoto.photographer_url

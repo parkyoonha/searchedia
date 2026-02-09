@@ -107,60 +107,88 @@ function saveToCache(cacheKey: string, result: OptimizedKeywords) {
  * Build the prompt for keyword optimization
  */
 function buildPrompt(description: string, word?: string, excludeResult?: string): string {
-  const variations = [
-    'Think of a unique angle or moment',
-    'Imagine a different scenario',
-    'Consider an alternative situation',
-    'Visualize another perspective',
-    'Create a fresh interpretation'
+  const randomSeed = Math.floor(Math.random() * 10000);
+
+  // Level 1: Random scene (first generation)
+  // Level 2+: Increasingly creative scenes (regeneration)
+  const isRegeneration = !!excludeResult;
+
+  // Common themes pool used for both first-gen and regen
+  const themes = [
+    'everyday/casual', 'holiday/seasonal', 'professional/work', 'family/home', 'romantic',
+    'outdoor/nature', 'hobby/craft', 'repair/DIY', 'celebration/party',
+    'teaching/learning', 'travel/adventure', 'relaxation', 'childhood',
+    'sports/fitness', 'cooking/food', 'morning routine', 'weekend activity'
   ];
-  const randomHint = variations[Math.floor(Math.random() * variations.length)];
 
-  const excludeInstruction = excludeResult
-    ? `\nDO NOT REPEAT THIS: "${excludeResult}"\nGenerate a COMPLETELY DIFFERENT variation!\n`
-    : '';
+  if (!isRegeneration) {
+    // LEVEL 1: Generate a RANDOM scene
+    const randomTheme = themes[Math.floor(Math.random() * themes.length)];
+    const mainSubject = word || description.split(' ').slice(-1)[0];
 
-  return `Convert to SPECIFIC VISUAL SCENE keywords for stock photos:
-"${description}"${word ? ` (Main subject: ${word})` : ''}
-${excludeInstruction}
-CRITICAL INSTRUCTION: ${randomHint}!
-- Identify the MAIN NOUNS (child, bag, woman, etc.) from the description
-- IGNORE specific VERBS (buy, want, love, etc.) - they are too restrictive
-- Create a COMPLETE VISUAL SCENE with action, not just noun lists
-- Think: "What is ONE specific moment involving [subject] + [object]?"
-- ALWAYS include WHO is doing WHAT with the object
+    return `Convert to stock photo keywords (seed: ${randomSeed}):
+"${description}"${word ? ` (Subject: ${word})` : ''}
+
+Generate a "${randomTheme}" themed scene that includes "${mainSubject}".
+Be creative and varied - do NOT always pick the most obvious scene.
+
+Examples for "tree" (notice "tree" is always included):
+- everyday: man climbing tree
+- holiday: family decorating christmas tree
+- relaxation: woman reading under tree
+- childhood: kids playing in tree
+- romantic: couple sitting under tree
+
+Examples for "coffee" (notice "coffee" is always included):
+- everyday: woman drinking coffee
+- work: barista making coffee
+- romantic: couple sharing coffee
+- relaxation: man reading with coffee
 
 RULES:
-1. Describe concrete actions, objects, settings, and atmosphere
-2. Include people ONLY if mentioned (I, my, person, woman, man, child, etc.)
-3. IMPORTANT: When people are mentioned, PUT PEOPLE KEYWORDS FIRST (woman, man, child, person, customer, etc.) - this ensures images with people appear first in search results
-4. If description has "isolated", "white background", "plain background", "cutout", or "no background" → Product photography style (isolated object on white background, studio shot, clean backdrop)
-5. Avoid abstract words (purchase, emotion, feeling, concept)
-6. DO NOT add adjectives NOT mentioned in description (colorful, bright, vibrant, beautiful, happy, cheerful, etc.) - these distract search results
-7. Use ONLY what is explicitly stated or clearly implied
+1. The subject "${mainSubject}" MUST appear in your answer
+2. Person first if mentioned (man, woman, child)
+3. Simple action verb
+4. Keep it SHORT (3-6 words)
 
-Examples showing COMPLETE VISUAL SCENES (not just noun lists):
+Return ONLY keywords (space-separated):`;
+  } else {
+    // LEVEL 2+: Generate creative scene with different theme
+    const themes = [
+      'holiday/seasonal', 'professional/work', 'family/home', 'romantic',
+      'outdoor/nature', 'hobby/craft', 'repair/DIY', 'celebration/party',
+      'teaching/learning', 'travel/adventure', 'relaxation', 'childhood'
+    ];
+    const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
-"a child want to buy a bag"
-  Thought: Main nouns = CHILD + BAG. Ignore "buy/want". Create any scene with child + bag.
-  OUTPUT 1: child wearing backpack carrying schoolbag kid with bag on shoulder
-  OUTPUT 2: child opening bag looking inside backpack kid exploring bag contents
-  OUTPUT 3: child holding bag showing handbag happy kid with new bag
-  OUTPUT 4: child packing bag preparing backpack kid organizing school bag
+    const mainSubject = word || description.split(' ').slice(-1)[0];
 
-"I want to buy a new bag"
-  Thought: Main nouns = WOMAN + BAG. Ignore "buy/want". Create any scene with woman + bag.
-  OUTPUT 1: woman carrying leather bag walking with handbag shoulder bag
-  OUTPUT 2: woman packing handbag organizing bag contents preparing purse
-  OUTPUT 3: woman holding shopping bag retail customer with new bag
+    return `Stock photo keywords (seed: ${randomSeed}):
+"${description}"${word ? ` (Subject: ${word})` : ''}
 
-⚠️ CRITICAL: NEVER output just "child bag" or "woman bag" - ALWAYS include ACTION!
-⚠️ The verb (buy, want, love) is just a HINT. Create ANY complete scene with the nouns!
+⛔ ALREADY USED: "${excludeResult}"
 
-YOUR OUTPUT MUST BE: [person] [action verb] [object] [details] [setting]
-Example format: "child wearing backpack carrying schoolbag kid with bag on shoulder"
+⚠️ CRITICAL: You MUST include "${mainSubject}" in your output!
 
-Return ONLY ONE set of keywords (space-separated):`;
+Generate a "${randomTheme}" themed scene that includes "${mainSubject}".
+
+Examples for "tree" (notice "tree" is always included):
+- basic: man climbing tree
+- holiday: family decorating christmas tree
+- relaxation: woman reading under tree
+- childhood: kids playing in tree
+- romantic: couple sitting under tree
+
+Examples for "coffee" (notice "coffee" is always included):
+- basic: woman drinking coffee
+- work: barista making coffee
+- romantic: couple sharing coffee
+- relaxation: man reading with coffee
+
+The subject "${mainSubject}" MUST appear in your answer!
+
+Return keywords:`;
+  }
 }
 
 /**
@@ -365,11 +393,13 @@ export async function optimizeKeywordsWithAI(
       excluding: excludeResult || 'none'
     });
 
-    // Check cache first
+    // Check cache first (skip cache for first generation to ensure randomness)
     const cacheKey = getCacheKey(description, word, excludeResult);
-    const cached = getCached(cacheKey);
-    if (cached) {
-      return cached;
+    if (excludeResult) {
+      const cached = getCached(cacheKey);
+      if (cached) {
+        return cached;
+      }
     }
 
     // Build prompt
@@ -399,8 +429,11 @@ export async function optimizeKeywordsWithAI(
       return null;
     }
 
+    // Remove quotes and clean up phrase
+    const cleanPhrase = phrase.replace(/^["']|["']$/g, '').replace(/["']/g, '').trim();
+
     // Convert phrase to individual keywords
-    const keywords = phrase
+    const keywords = cleanPhrase
       .split(/[,\s]+/)
       .map(k => k.trim())
       .filter(k => k.length > 0);
@@ -409,7 +442,7 @@ export async function optimizeKeywordsWithAI(
     const searchQuery = keywords.join(' ');
 
     const result: OptimizedKeywords = {
-      phrase,
+      phrase: cleanPhrase,
       keywords,
       searchQuery,
       original: description,
