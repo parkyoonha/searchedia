@@ -102,11 +102,15 @@ export async function getRandomUnsplashPhoto(
       return null;
     }
 
-    // Filter out already used images
-    const unusedImages = images.filter(img => !excludeUrls.includes(img.urls.regular));
+    // Filter out already used images (compare with urls.small since that's what we save)
+    const unusedImages = images.filter(img => !excludeUrls.includes(img.urls.small));
 
-    // If all images have been used, restart from the beginning
-    const selectedImage = unusedImages.length > 0 ? unusedImages[0] : images[0];
+    // If all images have been used, use original list (will get different page)
+    const availableImages = unusedImages.length > 0 ? unusedImages : images;
+
+    // Select a random image instead of always picking the first one
+    const randomIndex = Math.floor(Math.random() * availableImages.length);
+    const selectedImage = availableImages[randomIndex];
 
     const result: UnsplashPhotoResult = {
       imageUrl: selectedImage.urls.small,
@@ -115,7 +119,7 @@ export async function getRandomUnsplashPhoto(
       photographerUrl: `https://unsplash.com/@${selectedImage.user.username}`
     };
 
-    logger.log('[Unsplash] Successfully selected image from page', page, ':', result);
+    logger.log('[Unsplash] Successfully selected image from page', page, '(random index:', randomIndex, '/', availableImages.length, '):', result);
 
     return result;
   } catch (error) {

@@ -823,9 +823,37 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
     baseKeywords: ''
   });
 
+  // Temporary settings for pending changes
+  const [tempImageSettings, setTempImageSettings] = useState(imageSettings);
+  const [tempVideoSettings, setTempVideoSettings] = useState(videoSettings);
+  const [tempTargetCountByType, setTempTargetCountByType] = useState(targetCountByType);
+
+  // Sync temp settings when actual settings change (e.g., on project switch)
+  useEffect(() => {
+    setTempImageSettings(imageSettings);
+  }, [imageSettings]);
+
+  useEffect(() => {
+    setTempVideoSettings(videoSettings);
+  }, [videoSettings]);
+
+  useEffect(() => {
+    setTempTargetCountByType(targetCountByType);
+  }, [targetCountByType]);
+
   // Current settings based on active tab
   const currentSettings = mediaType === 'image' ? imageSettings : videoSettings;
   const setCurrentSettings = mediaType === 'image' ? setImageSettings : setVideoSettings;
+  const currentTempSettings = mediaType === 'image' ? tempImageSettings : tempVideoSettings;
+  const setCurrentTempSettings = mediaType === 'image' ? setTempImageSettings : setTempVideoSettings;
+
+  // Check if there are pending changes
+  const hasSettingsChanges = useMemo(() => {
+    const sourcesChanged = JSON.stringify(currentSettings.sources) !== JSON.stringify(currentTempSettings.sources);
+    const countChanged = currentSettings.count !== currentTempSettings.count;
+    const targetCountChanged = targetCountByType[mediaType] !== tempTargetCountByType[mediaType];
+    return sourcesChanged || countChanged || targetCountChanged;
+  }, [currentSettings, currentTempSettings, targetCountByType, tempTargetCountByType, mediaType]);
 
   // Aliases for backwards compatibility
   const imageSource = currentSettings.sources;
@@ -1844,7 +1872,22 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
 
 
   // Mock Generation Logic
-  const handleRegenerateItem = async (id: string, updatedData?: { word?: string, description?: string, keywords?: string, isolatedBackground?: boolean }) => {
+  const handleRegenerateItem = async (id: string, updatedData?: { word?: string, description?: string, keywords?: string, isolatedBackground?: boolean }, skipSelectionCheck: boolean = false) => {
+    // Check if multiple items are selected (skip this check for recursive calls)
+    if (!skipSelectionCheck && isSelectionMode && selectedIds.has(id) && selectedIds.size > 1) {
+      // Apply to all selected items
+      const selectedItems = items.filter(i => selectedIds.has(i.id));
+      logger.log(`[BulkGenerator] 🔄 Regenerating ${selectedItems.length} selected items`);
+
+      // Process each selected item in parallel
+      await Promise.all(selectedItems.map(selectedItem => {
+        // Use each item's own keywords, not the clicked item's
+        const itemUpdatedData = updatedData ? { ...updatedData, keywords: selectedItem.keywords } : undefined;
+        return handleRegenerateItem(selectedItem.id, itemUpdatedData, true); // Pass true to skip selection check
+      }));
+      return;
+    }
+
     const currentItem = items.find(i => i.id === id);
     if (!currentItem) return;
 
@@ -3276,26 +3319,35 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       {mediaType === 'image' ? (
                         <>
                           <Button
-                            variant={imageSource.includes('unsplash') ? 'default' : 'outline'}
+                            variant={currentTempSettings.sources.includes('unsplash') ? 'default' : 'outline'}
                             size="sm"
-                            className={`h-7 px-2.5 text-xs ${imageSource.includes('unsplash') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
-                            onClick={() => setImageSource(p => p.includes('unsplash') ? p.filter(s => s !== 'unsplash') : [...p, 'unsplash'])}
+                            className={`h-7 px-2.5 text-xs ${currentTempSettings.sources.includes('unsplash') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setCurrentTempSettings(p => ({
+                              ...p,
+                              sources: p.sources.includes('unsplash') ? p.sources.filter(s => s !== 'unsplash') : [...p.sources, 'unsplash']
+                            }))}
                           >
                             Unsplash
                           </Button>
                           <Button
-                            variant={imageSource.includes('pexels') ? 'default' : 'outline'}
+                            variant={currentTempSettings.sources.includes('pexels') ? 'default' : 'outline'}
                             size="sm"
-                            className={`h-7 px-2.5 text-xs ${imageSource.includes('pexels') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
-                            onClick={() => setImageSource(p => p.includes('pexels') ? p.filter(s => s !== 'pexels') : [...p, 'pexels'])}
+                            className={`h-7 px-2.5 text-xs ${currentTempSettings.sources.includes('pexels') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setCurrentTempSettings(p => ({
+                              ...p,
+                              sources: p.sources.includes('pexels') ? p.sources.filter(s => s !== 'pexels') : [...p.sources, 'pexels']
+                            }))}
                           >
                             Pexels
                           </Button>
                           <Button
-                            variant={imageSource.includes('pixabay') ? 'default' : 'outline'}
+                            variant={currentTempSettings.sources.includes('pixabay') ? 'default' : 'outline'}
                             size="sm"
-                            className={`h-7 px-2.5 text-xs ${imageSource.includes('pixabay') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
-                            onClick={() => setImageSource(p => p.includes('pixabay') ? p.filter(s => s !== 'pixabay') : [...p, 'pixabay'])}
+                            className={`h-7 px-2.5 text-xs ${currentTempSettings.sources.includes('pixabay') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setCurrentTempSettings(p => ({
+                              ...p,
+                              sources: p.sources.includes('pixabay') ? p.sources.filter(s => s !== 'pixabay') : [...p.sources, 'pixabay']
+                            }))}
                           >
                             Pixabay
                           </Button>
@@ -3303,26 +3355,35 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       ) : (
                         <>
                           <Button
-                            variant={imageSource.includes('pexels') ? 'default' : 'outline'}
+                            variant={currentTempSettings.sources.includes('pexels') ? 'default' : 'outline'}
                             size="sm"
-                            className={`h-7 px-2.5 text-xs ${imageSource.includes('pexels') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
-                            onClick={() => setImageSource(p => p.includes('pexels') ? p.filter(s => s !== 'pexels') : [...p, 'pexels'])}
+                            className={`h-7 px-2.5 text-xs ${currentTempSettings.sources.includes('pexels') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setCurrentTempSettings(p => ({
+                              ...p,
+                              sources: p.sources.includes('pexels') ? p.sources.filter(s => s !== 'pexels') : [...p.sources, 'pexels']
+                            }))}
                           >
                             Pexels
                           </Button>
                           <Button
-                            variant={imageSource.includes('pixabay') ? 'default' : 'outline'}
+                            variant={currentTempSettings.sources.includes('pixabay') ? 'default' : 'outline'}
                             size="sm"
-                            className={`h-7 px-2.5 text-xs ${imageSource.includes('pixabay') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
-                            onClick={() => setImageSource(p => p.includes('pixabay') ? p.filter(s => s !== 'pixabay') : [...p, 'pixabay'])}
+                            className={`h-7 px-2.5 text-xs ${currentTempSettings.sources.includes('pixabay') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setCurrentTempSettings(p => ({
+                              ...p,
+                              sources: p.sources.includes('pixabay') ? p.sources.filter(s => s !== 'pixabay') : [...p.sources, 'pixabay']
+                            }))}
                           >
                             Pixabay
                           </Button>
                           <Button
-                            variant={imageSource.includes('mixkit') ? 'default' : 'outline'}
+                            variant={currentTempSettings.sources.includes('mixkit') ? 'default' : 'outline'}
                             size="sm"
-                            className={`h-7 px-2.5 text-xs ${imageSource.includes('mixkit') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
-                            onClick={() => setImageSource(p => p.includes('mixkit') ? p.filter(s => s !== 'mixkit') : [...p, 'mixkit'])}
+                            className={`h-7 px-2.5 text-xs ${currentTempSettings.sources.includes('mixkit') ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            onClick={() => setCurrentTempSettings(p => ({
+                              ...p,
+                              sources: p.sources.includes('mixkit') ? p.sources.filter(s => s !== 'mixkit') : [...p.sources, 'mixkit']
+                            }))}
                           >
                             Mixkit
                           </Button>
@@ -3334,7 +3395,10 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                   {/* Per Item */}
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium text-slate-600">Per Item</Label>
-                    <Select value={imageCount} onValueChange={setImageCount}>
+                    <Select
+                      value={currentTempSettings.count}
+                      onValueChange={(val) => setCurrentTempSettings(p => ({ ...p, count: val }))}
+                    >
                       <SelectTrigger className="w-full h-9 bg-slate-50 border-slate-200 focus:bg-white focus:border-slate-300 rounded">
                         <SelectValue />
                       </SelectTrigger>
@@ -3355,15 +3419,15 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                         type="number"
                         min="1"
                         max="50"
-                        value={targetCountByType[mediaType]}
+                        value={tempTargetCountByType[mediaType]}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val === '') {
-                            setTargetCountByType(prev => ({ ...prev, [mediaType]: 1 }));
+                            setTempTargetCountByType(prev => ({ ...prev, [mediaType]: 1 }));
                           } else {
                             const num = parseInt(val);
                             if (!isNaN(num) && num >= 1) {
-                              setTargetCountByType(prev => ({ ...prev, [mediaType]: num }));
+                              setTempTargetCountByType(prev => ({ ...prev, [mediaType]: num }));
                             }
                           }
                         }}
@@ -3372,14 +3436,14 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-0">
                         <button
                           type="button"
-                          onClick={() => setTargetCountByType(prev => ({ ...prev, [mediaType]: Math.min(50, prev[mediaType] + 1) }))}
+                          onClick={() => setTempTargetCountByType(prev => ({ ...prev, [mediaType]: Math.min(50, prev[mediaType] + 1) }))}
                           className="h-3.5 w-4 flex items-center justify-center hover:bg-slate-200 rounded-sm transition-colors"
                         >
                           <ChevronUp className="h-3 w-3 opacity-30" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => setTargetCountByType(prev => ({ ...prev, [mediaType]: Math.max(1, prev[mediaType] - 1) }))}
+                          onClick={() => setTempTargetCountByType(prev => ({ ...prev, [mediaType]: Math.max(1, prev[mediaType] - 1) }))}
                           className="h-3.5 w-4 flex items-center justify-center hover:bg-slate-200 rounded-sm transition-colors"
                         >
                           <ChevronDown className="h-3 w-3 opacity-30" />
@@ -3387,6 +3451,38 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                       </div>
                     </div>
                   </div>
+
+                  {/* Cancel & Apply Buttons - Only show when there are changes */}
+                  {hasSettingsChanges && (
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-3 text-xs"
+                        onClick={() => {
+                          // Reset temp settings to current settings
+                          setTempImageSettings(imageSettings);
+                          setTempVideoSettings(videoSettings);
+                          setTempTargetCountByType(targetCountByType);
+                        }}
+                      >
+                        취소
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-8 px-3 text-xs bg-slate-800 hover:bg-slate-900"
+                        onClick={() => {
+                          // Apply temp settings to actual settings
+                          setImageSettings(tempImageSettings);
+                          setVideoSettings(tempVideoSettings);
+                          setTargetCountByType(tempTargetCountByType);
+                          toast.success('설정이 적용되었습니다');
+                        }}
+                      >
+                        적용
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Project Folder Section */}
@@ -4450,18 +4546,6 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                           {(item.selectedImageIndex || 0) + 1}/{item.generatedImages.length}
                                         </Badge>
                                       </div>
-                                      {/* Select/Confirm button */}
-                                      <Button
-                                        size="sm"
-                                        className="absolute bottom-1 left-1/2 -translate-x-1/2 h-6 px-2 text-xs bg-slate-800 hover:bg-slate-900 text-white shadow-lg"
-                                        onClick={() => {
-                                          // Keep only selected image and remove carousel
-                                          handleUpdateItem(item.id, 'generatedImages', undefined as any);
-                                        }}
-                                      >
-                                        <Check className="h-3 w-3 mr-1" />
-                                        Select
-                                      </Button>
                                     </>
                                   )}
                                </div>
@@ -4511,7 +4595,8 @@ export function BulkGenerator({ items, setItems, onDelete, onGenerate, onCancel,
                                  </button>
                                  <button
                                    onClick={() => {
-                                     handleRegenerateItem(item.id, { keywords: item.keywords });
+                                     // Each item will use its own keywords when called
+                                     handleRegenerateItem(item.id);
                                    }}
                                    disabled={item.status === 'processing' || !item.word}
                                    className="flex items-center gap-1 md:gap-1.5 px-1.5 md:px-2 py-1 md:py-1.5 w-16 md:w-20 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[10px] md:text-xs"

@@ -112,14 +112,8 @@ export async function getRandomFreepikImage(
     // Filter out already used images
     const unusedImages = images.filter(img => !excludeUrls.includes(img.image.source.url));
 
-    if (unusedImages.length === 0) {
-      logger.warn('[Freepik] All images on page', page, 'have been used');
-      return null;
-    }
-
-    // Get a random image from the unused results
-    const randomIndex = Math.floor(Math.random() * unusedImages.length);
-    const selectedImage = unusedImages[randomIndex];
+    // If all images have been used, restart from the beginning
+    const selectedImage = unusedImages.length > 0 ? unusedImages[0] : images[0];
 
     const result: FreepikPhotoResult = {
       imageUrl: selectedImage.image.source.url,
@@ -204,14 +198,8 @@ export async function getRandomFreepikVideo(
     // Filter out already used videos
     const unusedVideos = videos.filter(video => !excludeUrls.includes(video.image.source.url));
 
-    if (unusedVideos.length === 0) {
-      logger.warn('[Freepik] All videos on page', page, 'have been used');
-      return null;
-    }
-
-    // Get a random video from the unused results
-    const randomIndex = Math.floor(Math.random() * unusedVideos.length);
-    const selectedVideo = unusedVideos[randomIndex];
+    // If all videos have been used, restart from the beginning
+    const selectedVideo = unusedVideos.length > 0 ? unusedVideos[0] : videos[0];
 
     const result: FreepikVideoResult = {
       videoUrl: selectedVideo.image.source.url,

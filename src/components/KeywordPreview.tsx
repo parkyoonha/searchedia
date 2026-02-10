@@ -565,7 +565,7 @@ export function KeywordPreview({ text, word, existingKeywords, enableAI = false,
               <span className="text-sm font-medium">Isolate</span>
             </Button>
           )}
-          {mode === 'ai' && aiOptimized && !isOptimizing && !isEditing && onRegenerateImage && (
+          {mode === 'ai' && aiOptimized && !isOptimizing && !isEditing && (
             <>
               <Button
                 variant="ghost"

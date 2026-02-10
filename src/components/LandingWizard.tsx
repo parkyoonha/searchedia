@@ -768,7 +768,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
             onRef={el => sectionRefs.current[0] = el}
             onStepChange={setStep}
           >
-             <div className="w-full h-dvh flex flex-col items-center justify-center px-2 sm:px-4 md:px-6 overflow-hidden min-w-[300px]">
+             <div className="w-full h-screen flex flex-col items-center justify-center px-2 sm:px-4 md:px-6 overflow-hidden min-w-[300px]">
                 {/* Title with Readme button */}
                 <div className="flex flex-col items-center mb-4 w-full max-w-lg">
                     {/* Readme Button - above title, right aligned */}
@@ -832,7 +832,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                         </AlertDialog>
                     </motion.div>
                     <h1 className="text-2xl md:text-[1.7rem] md:leading-[1.15] font-bold tracking-tight text-slate-900 m-0 p-0 mb-2 md:mb-3 text-center md:text-center">
-                        <TypingAnimation text="Organize stock assets." />
+                        <TypingAnimation text="I’m not a maker, i’m a chooser." />
                     </h1>
                     {/* Subtitle and buttons wrapper - sized to content */}
                     <div className="flex flex-col items-center md:items-start w-full sm:inline-flex sm:w-auto md:w-full px-2 md:px-0">
@@ -881,57 +881,60 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 2.5, duration: 0.6 }}
-                    className="w-full max-w-xl md:max-w-[40rem] mt-10 md:mt-8 px-0 sm:px-4 md:px-8 relative"
+                    className="w-full max-w-xl md:max-w-[40rem] mt-16 md:mt-10 px-0 sm:px-4 md:px-8"
                 >
-                    <div
-                        className="w-full relative z-10 overflow-hidden py-10 md:py-10 cursor-grab active:cursor-grabbing select-none"
-                        onTouchStart={handleTouchStart}
-                        onTouchEnd={handleTouchEnd}
-                        onMouseDown={handleMouseDown}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseLeave}
-                    >
+                    {/* Background Box - now wraps everything */}
+                    <div className="bg-slate-100 rounded-2xl py-3 md:py-6 px-0 relative overflow-x-hidden overflow-y-visible">
                         <div
-                            ref={carouselRef}
-                            className="flex flex-row gap-4 transition-transform duration-300 ease-out"
-                            style={{
-                                transform: `translateX(calc(50% - ${currentVideoIndex * (isMobile ? 80 : 60)}% - ${currentVideoIndex * 16}px - ${isMobile ? 45 : 30}%))`
-                            }}
+                            className="w-full cursor-grab active:cursor-grabbing select-none py-4 md:py-4"
+                            onTouchStart={handleTouchStart}
+                            onTouchEnd={handleTouchEnd}
+                            onMouseDown={handleMouseDown}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseLeave}
                         >
-                            {videoSources.map((src, index) => (
-                                <div
-                                    key={index}
-                                    className={`flex-shrink-0 w-[85%] sm:w-[60%] aspect-[16/9] bg-slate-200 rounded-lg overflow-hidden shadow-md sm:shadow-lg transition-all duration-300 ${
-                                        index === currentVideoIndex ? 'scale-110 z-10' : 'scale-95 opacity-50'
-                                    }`}
-                                >
-                                    <video
-                                        ref={el => videoRefs.current[index] = el}
-                                        className={`w-full h-full object-cover ${index === 0 ? 'object-top' : ''}`}
-                                        style={index === 1 ? { objectPosition: 'right bottom' } : undefined}
-                                        autoPlay={index === 0}
-                                        muted
-                                        loop
-                                        playsInline
+                            <div
+                                ref={carouselRef}
+                                className="flex flex-row gap-4 transition-transform duration-300 ease-out"
+                                style={{
+                                    transform: `translateX(calc(50% - ${currentVideoIndex * (isMobile ? 74 : 65)}% - ${currentVideoIndex * 16}px - ${isMobile ? 43 : 33}%))`
+                                }}
+                            >
+                                {videoSources.map((src, index) => (
+                                    <div
+                                        key={index}
+                                        className={`flex-shrink-0 w-[80%] sm:w-[65%] aspect-[16/9] bg-slate-200 rounded-lg overflow-hidden shadow-md sm:shadow-lg transition-all duration-300 ${
+                                            index === currentVideoIndex ? 'scale-110 z-10' : 'scale-95 opacity-50'
+                                        }`}
                                     >
-                                        <source src={src} type="video/mp4" />
-                                    </video>
-                                </div>
+                                        <video
+                                            ref={el => videoRefs.current[index] = el}
+                                            className={`w-full h-full object-cover ${index === 0 ? 'object-top' : ''}`}
+                                            style={index === 1 ? { objectPosition: 'right bottom' } : undefined}
+                                            autoPlay={index === 0}
+                                            muted
+                                            loop
+                                            playsInline
+                                        >
+                                            <source src={src} type="video/mp4" />
+                                        </video>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Indicator Dots - now inside gray background */}
+                        <div className="flex justify-center gap-2 mt-2 md:mt-5">
+                            {videoSources.map((_, index) => (
+                                <button
+                                    key={index}
+                                    onClick={() => setCurrentVideoIndex(index)}
+                                    className={`w-2 h-2 rounded-full transition-colors ${
+                                        index === currentVideoIndex ? 'bg-slate-600' : 'bg-slate-300'
+                                    }`}
+                                />
                             ))}
                         </div>
-                    </div>
-
-                    {/* Indicator Dots */}
-                    <div className="flex justify-center gap-2 mt-2">
-                        {videoSources.map((_, index) => (
-                            <button
-                                key={index}
-                                onClick={() => setCurrentVideoIndex(index)}
-                                className={`w-2 h-2 rounded-full transition-colors ${
-                                    index === currentVideoIndex ? 'bg-slate-600' : 'bg-slate-300'
-                                }`}
-                            />
-                        ))}
                     </div>
                 </motion.div>
 
@@ -1086,7 +1089,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                    {MEDIA_TYPES.map(type => (
                      <Card
                        key={type.id}
-                       className={`cursor-pointer transition-all !border-2 hover:!border-blue-400 active:!border-blue-500 active:!bg-white active:!text-slate-900 focus:!border-blue-500 focus:!bg-white focus-visible:!border-blue-500 focus-visible:!bg-white focus-visible:!outline-blue-500 focus-visible:!ring-0 group ${selections.mediaType === type.id ? '!border-blue-500 !bg-white shadow-md' : '!border-transparent !bg-white'}`}
+                       className={`cursor-pointer transition-all !border-2 hover:!border-black active:!border-black active:!bg-white active:!text-slate-900 focus:!border-black focus:!bg-white focus-visible:!border-black focus-visible:!bg-white focus-visible:!outline-black focus-visible:!ring-0 group ${selections.mediaType === type.id ? '!border-black !bg-white shadow-md' : '!border-transparent !bg-white'}`}
                        onClick={() => {
                          updateSelection('mediaType', type.id);
                          updateSelection('sources', []);
@@ -1141,13 +1144,13 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                                     className={`transition-all border-2 relative ${
                                         isDisabled
                                             ? 'opacity-50 cursor-not-allowed border-slate-200'
-                                            : `cursor-pointer hover:!border-blue-400 active:!border-blue-500 focus:!border-blue-500 focus-visible:!border-blue-500 focus:outline-none ${selections.sources.includes(source.id) ? 'border-blue-500 bg-slate-50/50 shadow-md' : 'border-transparent'}`
+                                            : `cursor-pointer hover:!border-black active:!border-black focus:!border-black focus-visible:!border-black focus:outline-none ${selections.sources.includes(source.id) ? 'border-black bg-slate-50/50 shadow-md' : 'border-transparent'}`
                                     }`}
                                     onClick={() => !isDisabled && toggleSource(source.id)}
                                 >
                                     {selections.sources.includes(source.id) && !isDisabled && (
-                                        <div className="absolute top-3 right-3 text-blue-500">
-                                            <CheckCircle2 className="h-5 w-5 fill-blue-100" />
+                                        <div className="absolute top-3 right-3 text-black">
+                                            <CheckCircle2 className="h-5 w-5 fill-gray-100" />
                                         </div>
                                     )}
                                     <CardContent className="p-4 flex items-center gap-4">
@@ -1183,12 +1186,12 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                                 {paidSources.map(source => (
                                     <Card
                                         key={source.id}
-                                        className={`cursor-pointer transition-all border-2 hover:!border-blue-400 active:!border-blue-500 focus:!border-blue-500 focus-visible:!border-blue-500 focus:outline-none relative ${selections.sources.includes(source.id) ? 'border-blue-500 bg-slate-50/50 shadow-md' : 'border-transparent'}`}
+                                        className={`cursor-pointer transition-all border-2 hover:!border-black active:!border-black focus:!border-black focus-visible:!border-black focus:outline-none relative ${selections.sources.includes(source.id) ? 'border-black bg-slate-50/50 shadow-md' : 'border-transparent'}`}
                                         onClick={() => toggleSource(source.id)}
                                     >
                                         {selections.sources.includes(source.id) && (
-                                            <div className="absolute top-3 right-3 text-blue-500">
-                                                <CheckCircle2 className="h-5 w-5 fill-blue-100" />
+                                            <div className="absolute top-3 right-3 text-black">
+                                                <CheckCircle2 className="h-5 w-5 fill-gray-100" />
                                             </div>
                                         )}
                                         <CardContent className="p-4 flex items-center gap-4">
@@ -1212,7 +1215,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                         size="lg"
                         disabled={selections.sources.length === 0}
                         onClick={handleNext}
-                        className="px-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-semibold shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none"
+                        className="px-8 bg-black hover:bg-black text-white rounded-full font-semibold shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none"
                     >
                         Continue with {selections.sources.length} Source{selections.sources.length !== 1 ? 's' : ''}
                         <ArrowRight className="ml-2 h-4 w-4" />
@@ -1240,7 +1243,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                      <Button
                        key={count}
                        variant={selections.count === count ? 'default' : 'outline'}
-                       className={`h-18 text-2xl font-semibold hover:!border-blue-400 hover:!text-blue-600 active:!bg-blue-600 active:!border-blue-600 active:!text-white focus:!bg-blue-600 focus:!border-blue-600 focus:!text-white focus-visible:!ring-blue-500 focus-visible:!ring-2 ${selections.count === count ? 'bg-blue-600 hover:bg-blue-700 border-blue-600' : ''}`}
+                       className={`h-18 text-2xl font-semibold hover:!border-black hover:!text-black active:!bg-black active:!border-black active:!text-white focus:!bg-black focus:!border-black focus:!text-white focus-visible:!ring-black focus-visible:!ring-2 ${selections.count === count ? 'bg-black hover:bg-slate-800 border-black' : ''}`}
                        onClick={() => {
                          updateSelection('count', count);
                          if (step === 3) handleNext();
@@ -1285,7 +1288,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
                        size="icon"
                        disabled={!selections.word}
                        onClick={handleNext}
-                       className="w-10 h-10 rounded-md bg-blue-600 hover:bg-blue-700"
+                       className="w-10 h-10 rounded-md bg-black hover:bg-slate-800"
                      >
                        <ArrowRight className="h-5 w-5" />
                      </Button>
@@ -1349,7 +1352,7 @@ export function LandingWizard({ onComplete }: LandingWizardProps) {
 
                    <Button
                      size="lg"
-                     className="w-full h-12 text-lg font-medium bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200"
+                     className="w-full h-12 text-lg font-medium bg-black hover:bg-slate-800 shadow-lg shadow-blue-200"
                      onClick={handleFinalSubmit}
                    >
                      Search
